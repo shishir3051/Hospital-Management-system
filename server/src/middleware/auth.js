@@ -1,64 +1,97 @@
-// JWT Authentication Middleware
 import jwt from 'jsonwebtoken';
-import { findUserById } from '../utils/db.js';
-
-const JWT_SECRET = process.env.JWT_SECRET || 'healthcore-secret-key-2024';
+import { env } from '../config/env.js';
+import { findUserById, resolveUserProfile } from '../utils/db.js';
+import { AppError } from '../utils/errors.js';
 
 export function generateToken(user) {
-  // Use _id for MongoDB compatibility if it exists
-  const id = user._id || user.id;
   return jwt.sign(
-    { userId: id, email: user.email, role: user.role },
-    JWT_SECRET,
-    { expiresIn: '24h' }
+    {
+      userId: user._id.toString(),
+      email: user.email,
+      role: user.role
+    },
+    env.JWT_SECRET,
+    {
+      algorithm: 'HS256',
+      expiresIn: env.JWT_EXPIRES_IN
+    }
   );
 }
 
 export function verifyToken(token) {
   try {
-    return jwt.verify(token, JWT_SECRET);
-  } catch (error) {
+    return jwt.verify(token, env.JWT_SECRET, {
+      algorithms: ['HS256']
+    });
+  } catch {
     return null;
   }
 }
 
-export async function authenticate(req, res, next) {
+export async function authenticate(req, _res, next) {
   try {
     const authHeader = req.headers.authorization;
-
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      return res.status(401).json({ error: 'Authentication required' });
+      return next(new AppError('Authentication required', 401));
     }
 
-    const token = authHeader.split(' ')[1];
-    const decoded = verifyToken(token);
+    const token = authHeader.slice(7).trim();
+    if (!token) {
+      return next(new AppError('Authentication required', 401));
+    }
 
-    if (!decoded) {
-      return res.status(401).json({ error: 'Invalid or expired token' });
+    const decoded = verifyToken(token);
+    if (!decoded?.userId) {
+      return next(new AppError('Invalid or expired token', 401));
     }
 
     const user = await findUserById(decoded.userId);
     if (!user) {
-      return res.status(401).json({ error: 'User not found' });
+      return next(new AppError('User account not found', 401));
+    }
+
+    if (user.status !== 'ACTIVE') {
+      return next(new AppError('Account is inactive or suspended. Please contact administration.', 403));
     }
 
     req.user = user;
-    next();
-  } catch (error) {
-    res.status(500).json({ error: 'Authentication middleware error' });
+    req.userProfile = await resolveUserProfile(user);
+    return next();
+  } catch (err) {
+    return next(err);
   }
 }
 
-export function authorize(...roles) {
-  return (req, res, next) => {
+export async function optionalAuth(req, _res, next) {
+  try {
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return next();
+    }
+    const token = authHeader.slice(7).trim();
+    const decoded = verifyToken(token);
+    if (!decoded?.userId) {
+      return next();
+    }
+    const user = await findUserById(decoded.userId);
+    if (user && user.status === 'ACTIVE') {
+      req.user = user;
+      req.userProfile = await resolveUserProfile(user);
+    }
+    return next();
+  } catch {
+    return next();
+  }
+}
+
+export function authorize(...allowedRoles) {
+  return (req, _res, next) => {
     if (!req.user) {
-      return res.status(401).json({ error: 'Authentication required' });
+      return next(new AppError('Authentication required', 401));
     }
-
-    if (!roles.includes(req.user.role)) {
-      return res.status(403).json({ error: 'Insufficient permissions' });
+    if (!allowedRoles.includes(req.user.role)) {
+      return next(new AppError('Insufficient permissions for this action', 403));
     }
-
-    next();
+    return next();
   };
 }
