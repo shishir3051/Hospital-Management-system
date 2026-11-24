@@ -1,15 +1,19 @@
-// Database Models and Utilities
 import bcrypt from 'bcryptjs';
-import { User } from '../models/User.js';
-import { Patient } from '../models/Patient.js';
-import { Doctor } from '../models/Doctor.js';
-import { Appointment } from '../models/Appointment.js';
-import { Billing } from '../models/Billing.js';
-import { Prescription } from '../models/Prescription.js';
+import {
+  User,
+  Patient,
+  Doctor,
+  Appointment,
+  Billing,
+  Prescription,
+  Token,
+  ContactMessage,
+  AuditLog,
+  LabOrder,
+  Medicine,
+  Referral
+} from '../models/index.js';
 
-import { Token } from '../models/Token.js';
-
-// Export models for direct use
 export {
   User,
   Patient,
@@ -17,26 +21,56 @@ export {
   Appointment,
   Billing,
   Prescription,
-  Token
+  Token,
+  ContactMessage,
+  AuditLog,
+  LabOrder,
+  Medicine,
+  Referral
 };
 
-// Hash password helper
 export async function hashPassword(password) {
   const salt = await bcrypt.genSalt(10);
   return bcrypt.hash(password, salt);
 }
 
-// Compare password helper
 export async function comparePassword(password, hash) {
   return bcrypt.compare(password, hash);
 }
 
-// Find user by email helper (Async)
-export async function findUserByEmail(email) {
-  return User.findOne({ email: email.toLowerCase() });
+export async function findUserByEmail(email, includePassword = false) {
+  const query = User.findOne({ email: String(email).toLowerCase().trim() });
+  return includePassword ? query.select('+password') : query;
 }
 
-// Find user by ID helper (Async)
-export async function findUserById(id) {
-  return User.findById(id);
+export async function findUserById(id, includePassword = false) {
+  const query = User.findById(id);
+  return includePassword ? query.select('+password') : query;
+}
+
+export async function resolveUserProfile(user) {
+  if (!user) return null;
+  if (user.role === 'PATIENT') {
+    return Patient.findOne({ userId: user._id });
+  }
+  if (user.role === 'DOCTOR') {
+    return Doctor.findOne({ userId: user._id });
+  }
+  return null;
+}
+
+export function formatUserResponse(user, profile = null) {
+  return {
+    id: user._id.toString(),
+    _id: user._id.toString(),
+    email: user.email,
+    role: user.role,
+    firstName: user.firstName,
+    lastName: user.lastName,
+    phone: user.phone || '',
+    avatar: user.avatar || null,
+    status: user.status,
+    createdAt: user.createdAt,
+    profile: profile ? profile.toJSON() : null
+  };
 }
