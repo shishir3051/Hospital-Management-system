@@ -1,68 +1,66 @@
-import express from 'express';
-import cors from 'cors';
-import rateLimit from 'express-rate-limit';
+// Load and validate environment configuration FIRST (before any dependent imports)
+import { env } from './config/env.js';
+import dns from 'dns';
 import mongoose from 'mongoose';
-import dotenv from 'dotenv';
-import { authRouter } from './routes/auth.routes.js';
-import { patientRouter } from './routes/patient.routes.js';
-import { doctorRouter } from './routes/doctor.routes.js';
-import { appointmentRouter } from './routes/appointment.routes.js';
-import { billingRouter } from './routes/billing.routes.js';
-import { dashboardRouter } from './routes/dashboard.routes.js';
-import { prescriptionRouter } from './routes/prescription.routes.js';
-import { errorHandler } from './middleware/errorHandler.js';
-import { initializeData } from './utils/initializeData.js';
+import { createApp } from './app.js';
 
-// Load environment variables
-dotenv.config();
+const app = createApp();
+let server;
 
-const app = express();
-const PORT = process.env.PORT || 3001;
+async function connectDatabase() {
+  try {
+    await mongoose.connect(env.MONGODB_URI, { serverSelectionTimeoutMS: 10000 });
+  } catch (err) {
+    if (err?.code === 'ECONNREFUSED' && err?.syscall === 'querySrv') {
+      console.warn('⚠️  Local DNS refused MongoDB SRV lookup; retrying with public DNS resolvers...');
+      dns.setServers(['8.8.8.8', '1.1.1.1']);
+      await mongoose.connect(env.MONGODB_URI, { serverSelectionTimeoutMS: 10000 });
+    } else {
+      throw err;
+    }
+  }
+}
 
-// Middleware
-app.use(cors());
-app.use(express.json());
-
-// Rate limiting
-const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 100,
-  message: { error: 'Too many requests, please try again later.' }
-});
-app.use('/api/', limiter);
-
-// Database connection
-mongoose.connect(process.env.MONGODB_URI)
-  .then(() => {
-    console.log('✅ Connected to MongoDB');
-    // Initialize sample data if needed (only for migration)
-    initializeData();
-  })
-  .catch(err => {
-    console.error('❌ MongoDB connection error:', err);
+async function startServer() {
+  if (!env.MONGODB_URI) {
+    console.error('❌ FATAL: MONGODB_URI environment variable is not defined.');
     process.exit(1);
-  });
+  }
 
-// Routes
-app.use('/api/auth', authRouter);
-app.use('/api/patients', patientRouter);
-app.use('/api/doctors', doctorRouter);
-app.use('/api/appointments', appointmentRouter);
-app.use('/api/billing', billingRouter);
-app.use('/api/dashboard', dashboardRouter);
-app.use('/api/prescriptions', prescriptionRouter);
+  try {
+    await connectDatabase();
+    console.log('✅ Connected to MongoDB');
 
-// Health check
-app.get('/api/health', (req, res) => {
-  res.json({ status: 'healthy', timestamp: new Date().toISOString() });
+    server = app.listen(env.PORT, () => {
+      console.log(`🏥 HealthCore Medical Center API listening on port ${env.PORT} (${env.NODE_ENV})`);
+    });
+  } catch (err) {
+    console.error('❌ Failed to start server:', err.message);
+    process.exit(1);
+  }
+}
+
+async function shutdown(signal) {
+  console.log(`\nReceived ${signal}. Shutting down gracefully...`);
+  try {
+    if (server) {
+      await new Promise((resolve) => server.close(resolve));
+    }
+    await mongoose.connection.close();
+    console.log('✅ Clean shutdown complete');
+    process.exit(0);
+  } catch (err) {
+    console.error('Error during shutdown:', err.message);
+    process.exit(1);
+  }
+}
+
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+process.on('SIGINT', () => shutdown('SIGINT'));
+process.on('unhandledRejection', (reason) => {
+  console.error('Unhandled Promise Rejection:', reason);
 });
 
-// Error handling
-app.use(errorHandler);
-
-// Start server
-app.listen(PORT, () => {
-  console.log(`🏥 HealthCore HMS API running on port ${PORT}`);
-});
+startServer();
 
 export default app;

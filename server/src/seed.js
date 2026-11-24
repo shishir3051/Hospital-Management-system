@@ -1,27 +1,26 @@
+import { env } from './config/env.js';
 import mongoose from 'mongoose';
-import dotenv from 'dotenv';
 import { initializeData } from './utils/initializeData.js';
 
-dotenv.config();
-
-const seed = async () => {
-  try {
-    console.log('Connecting to MongoDB for seeding...');
-    await mongoose.connect(process.env.MONGODB_URI);
-    console.log('Connected.');
-
-    // Clear existing data? The initializeData script checks if User count > 0.
-    // I'll force it by clearing if the user wants, or just let it skip if already there.
-    // For a "Continue" request after implementation, I'll assume they want the data seeded now.
-
-    await initializeData();
-    
-    console.log('Seeding process complete.');
-    process.exit(0);
-  } catch (err) {
-    console.error('Seeding failed:', err);
+async function runSeed() {
+  if (!env.MONGODB_URI) {
+    console.error('❌ MONGODB_URI is not set in server/.env');
     process.exit(1);
   }
-};
 
-seed();
+  const force = process.argv.includes('--force');
+
+  try {
+    await mongoose.connect(env.MONGODB_URI);
+    console.log('✅ Connected to MongoDB');
+    await initializeData({ force });
+    await mongoose.connection.close();
+    process.exit(0);
+  } catch (err) {
+    console.error('❌ Seed failed:', err.message);
+    await mongoose.connection.close().catch(() => {});
+    process.exit(1);
+  }
+}
+
+runSeed();
