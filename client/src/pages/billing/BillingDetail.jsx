@@ -1,149 +1,326 @@
-// Billing Detail Page
-import { useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useState, useEffect, useCallback } from 'react';
+import { useParams, useNavigate, Link } from 'react-router-dom';
 import { billingApi } from '../../services/api';
-import { ArrowLeft, DollarSign, CheckCircle, Printer, CreditCard, Banknote } from 'lucide-react';
+import { useAuth } from '../../store/AuthContext';
+import {
+  PageHeader,
+  Card,
+  Button,
+  BrandLogo,
+  StatusBadge,
+  Input,
+  Select,
+  Modal,
+  LoadingSpinner,
+  ErrorAlert,
+  useToast
+} from '../../components/ui';
+import { SITE, formatCurrency, formatDate, formatShortId } from '../../config/site';
+import { ArrowLeft, Printer, CreditCard, CheckCircle2 } from 'lucide-react';
 
 export default function BillingDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const { user } = useAuth();
+  const toast = useToast();
+
   const [bill, setBill] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [processing, setProcessing] = useState(false);
+  const [error, setError] = useState('');
+  const [payModalOpen, setPayModalOpen] = useState(false);
+  const [paymentMethod, setPaymentMethod] = useState('CARD');
+  const [paymentAmount, setPaymentAmount] = useState('');
+  const [paying, setPaying] = useState(false);
 
-  useEffect(() => { loadBill(); }, [id]);
+  const isFinanceStaff = ['ADMIN', 'ACCOUNTANT'].includes(user?.role);
+  const isOwnerPatient =
+    user?.role === 'PATIENT' && user?.profile?._id && bill?.patientId?._id === user.profile._id;
+  const canPay =
+    (isFinanceStaff || isOwnerPatient) &&
+    ['UNPAID', 'PARTIAL'].includes(bill?.status);
 
-  const loadBill = async () => {
+  const loadBill = useCallback(async () => {
     try {
+      setLoading(true);
+      setError('');
       const data = await billingApi.getById(id);
       setBill(data);
-    } catch (err) { console.error('Failed to load bill:', err); }
-    finally { setLoading(false); }
-  };
+      const alreadyPaid = Number(data.paidAmount || 0);
+      const remaining = Math.max(0, Number(data.total || 0) - alreadyPaid);
+      setPaymentAmount(remaining.toFixed(2));
+    } catch (err) {
+      setError(err.message || 'Unable to load invoice');
+    } finally {
+      setLoading(false);
+    }
+  }, [id]);
 
-  const handlePayment = async (method) => {
-    setProcessing(true);
+  useEffect(() => {
+    loadBill();
+  }, [loadBill]);
+
+  const handleProcessPayment = async (e) => {
+    e.preventDefault();
+    setPaying(true);
     try {
-      await billingApi.pay(id, method);
+      const amount = isFinanceStaff && paymentAmount ? Number(paymentAmount) : undefined;
+      const res = await billingApi.pay(id, paymentMethod, amount);
+      toast.success(res.message || 'Payment recorded successfully.');
+      setPayModalOpen(false);
       loadBill();
-    } catch (err) { alert(err.message); }
-    finally { setProcessing(false); }
+    } catch (err) {
+      toast.error(err.message || 'Failed to process payment');
+    } finally {
+      setPaying(false);
+    }
   };
 
-  if (loading) {
-    return <div className="flex items-center justify-center h-64"><div className="animate-spin rounded-full h-12 w-12 border-4 border-primary border-t-transparent"></div></div>;
+  if (loading) return <LoadingSpinner label="Loading invoice statement..." />;
+
+  if (error || !bill) {
+    return (
+      <div className="space-y-4">
+        <ErrorAlert message={error || 'Invoice not found'} onRetry={loadBill} />
+        <Button variant="outline" onClick={() => navigate('/dashboard/billing')}>
+          <ArrowLeft className="w-4 h-4" />
+          Back to Billing
+        </Button>
+      </div>
+    );
   }
 
-  if (!bill) return <div className="text-center p-8">Bill not found</div>;
-
-  const paymentMethods = [
-    { id: 'CASH', label: 'Cash', icon: Banknote },
-    { id: 'CARD', label: 'Card', icon: CreditCard }
-  ];
+  const patientUser = bill.patientId?.userId;
+  const alreadyPaid = bill.status === 'PAID' ? Number(bill.total || 0) : Number(bill.paidAmount || 0);
+  const remainingBalance = Math.max(0, Number(bill.total || 0) - alreadyPaid);
+  const taxPct = Math.round(Number(bill.taxRate ?? SITE.defaultTaxRate) * 100);
 
   return (
-    <div className="max-w-3xl mx-auto space-y-6 animate-fadeIn">
-      <div className="flex items-center justify-between">
-        <button onClick={() => navigate('/billing')} className="flex items-center gap-2 text-gray-600 hover:text-gray-900">
-          <ArrowLeft className="w-5 h-5" /> Back to Billing
-        </button>
-        <button className="flex items-center gap-2 px-4 py-2 border rounded-lg hover:bg-gray-50">
-          <Printer className="w-4 h-4" /> Print Invoice
-        </button>
+    <div className="max-w-4xl mx-auto space-y-6 animate-fadeIn">
+      <div className="no-print">
+        <PageHeader
+          breadcrumb={
+            <Link
+              to="/dashboard/billing"
+              className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-600 hover:text-primary-700"
+            >
+              <ArrowLeft className="w-3.5 h-3.5" aria-hidden="true" />
+              Back to Billing Ledger
+            </Link>
+          }
+          title={`Invoice ${formatShortId(bill._id, 'INV-')}`}
+          subtitle={`Issued on ${formatDate(bill.createdAt)} · Due ${formatDate(bill.dueDate)}`}
+          actions={
+            <>
+              <Button variant="outline" size="sm" onClick={() => window.print()}>
+                <Printer className="w-4 h-4" aria-hidden="true" />
+                Print / Save PDF
+              </Button>
+              {canPay && (
+                <Button variant="primary" size="sm" onClick={() => setPayModalOpen(true)}>
+                  <CreditCard className="w-4 h-4" aria-hidden="true" />
+                  Process Payment
+                </Button>
+              )}
+            </>
+          }
+        />
       </div>
 
-      {/* Invoice Card */}
-      <div className="bg-white rounded-xl shadow-card overflow-hidden">
-        <div className="p-6 border-b border-gray-100">
-          <div className="flex items-center justify-between">
-            <div>
-              <h1 className="text-2xl font-bold text-gray-900">Invoice</h1>
-              <p className="text-gray-500 font-mono text-sm">#{bill.id.substring(0, 8).toUpperCase()}</p>
+      {/* Printable A4 Invoice Sheet */}
+      <Card className="print-sheet p-6 sm:p-10 space-y-8">
+        {/* Header */}
+        <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4 pb-6 border-b border-slate-200">
+          <div className="space-y-2">
+            <BrandLogo subtitle={SITE.tagline} />
+            <div className="text-xs text-slate-600 space-y-0.5 pt-1">
+              <p>{SITE.address}</p>
+              <p>{SITE.appointmentPhone} · {SITE.billingEmail}</p>
             </div>
-            <span className={`px-4 py-2 text-sm font-medium rounded-full ${bill.status === 'PAID' ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}>
-              {bill.status}
+          </div>
+          <div className="sm:text-right space-y-1.5">
+            <p className="text-xs font-semibold uppercase tracking-wider text-slate-600">
+              Medical Statement
+            </p>
+            <p className="text-xl font-display font-bold font-mono text-slate-900">
+              {formatShortId(bill._id, 'INV-')}
+            </p>
+            <StatusBadge status={bill.status} />
+          </div>
+        </div>
+
+        {/* Bill To & Dates */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 text-sm">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-wide text-slate-600 mb-1">
+              Billed To
+            </p>
+            <p className="text-base font-display font-bold text-slate-900">
+              {patientUser ? `${patientUser.firstName} ${patientUser.lastName}` : 'Patient Account'}
+            </p>
+            {patientUser?.email && <p className="text-slate-600">{patientUser.email}</p>}
+            {patientUser?.phone && <p className="text-slate-600">{patientUser.phone}</p>}
+          </div>
+          <div className="sm:text-right space-y-1">
+            <p className="text-slate-600">
+              <span className="font-semibold text-slate-800">Invoice Date:</span>{' '}
+              {formatDate(bill.createdAt)}
+            </p>
+            <p className="text-slate-600">
+              <span className="font-semibold text-slate-800">Due Date:</span>{' '}
+              {formatDate(bill.dueDate)}
+            </p>
+            {bill.paymentDate && (
+              <p className="text-emerald-700 font-medium">
+                Paid on {formatDate(bill.paymentDate)} via {bill.paymentMethod}
+              </p>
+            )}
+          </div>
+        </div>
+
+        {/* Line Items Table */}
+        <div className="overflow-x-auto border border-slate-200 rounded-xl">
+          <table className="w-full text-left border-collapse">
+            <thead className="bg-slate-50 border-b border-slate-200">
+              <tr>
+                <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-600">
+                  Service Description
+                </th>
+                <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-600 text-center">
+                  Qty
+                </th>
+                <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-600 text-right">
+                  Unit Price
+                </th>
+                <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-600 text-right">
+                  Amount
+                </th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-200 text-sm">
+              {(bill.items || []).map((item, idx) => (
+                <tr key={`${item.description}-${idx}`}>
+                  <td className="px-4 py-3.5 font-medium text-slate-900">{item.description}</td>
+                  <td className="px-4 py-3.5 text-center tabular-nums text-slate-700">
+                    {item.quantity}
+                  </td>
+                  <td className="px-4 py-3.5 text-right tabular-nums text-slate-700">
+                    {formatCurrency(item.unitPrice)}
+                  </td>
+                  <td className="px-4 py-3.5 text-right font-semibold tabular-nums text-slate-900">
+                    {formatCurrency(item.total ?? Number(item.quantity || 1) * Number(item.unitPrice || 0))}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        {/* Totals */}
+        <div className="flex flex-col sm:flex-row justify-between gap-6 pt-2">
+          <div className="max-w-sm text-xs text-slate-600 space-y-1">
+            {bill.notes && (
+              <>
+                <p className="font-semibold text-slate-800 uppercase tracking-wide">Notes</p>
+                <p>{bill.notes}</p>
+              </>
+            )}
+            <p className="pt-2">
+              Questions regarding this statement? Contact {SITE.billingEmail}.
+            </p>
+          </div>
+
+          <div className="w-full sm:w-72 space-y-2 text-sm">
+            <div className="flex justify-between text-slate-600">
+              <span>Subtotal</span>
+              <span className="tabular-nums font-medium text-slate-900">
+                {formatCurrency(bill.subtotal)}
+              </span>
+            </div>
+            {Number(bill.discount || 0) > 0 && (
+              <div className="flex justify-between text-emerald-700">
+                <span>Discount</span>
+                <span className="tabular-nums font-medium">-{formatCurrency(bill.discount)}</span>
+              </div>
+            )}
+            <div className="flex justify-between text-slate-600">
+              <span>Tax ({taxPct}%)</span>
+              <span className="tabular-nums font-medium text-slate-900">
+                {formatCurrency(bill.tax)}
+              </span>
+            </div>
+            <div className="flex justify-between text-base font-display font-bold text-slate-900 pt-2.5 border-t border-slate-200">
+              <span>Invoice Total</span>
+              <span className="tabular-nums">{formatCurrency(bill.total)}</span>
+            </div>
+            {alreadyPaid > 0 && (
+              <div className="flex justify-between text-emerald-700 font-medium">
+                <span>Amount Paid</span>
+                <span className="tabular-nums">{formatCurrency(alreadyPaid)}</span>
+              </div>
+            )}
+            {remainingBalance > 0 && (
+              <div className="flex justify-between text-amber-800 font-bold pt-1">
+                <span>Balance Due</span>
+                <span className="tabular-nums">{formatCurrency(remainingBalance)}</span>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {bill.status === 'PAID' && (
+          <div className="rounded-xl bg-emerald-50 border border-emerald-200 p-4 flex items-center gap-3 text-sm text-emerald-900">
+            <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" aria-hidden="true" />
+            <span>
+              <strong>Paid in Full</strong> — Settled via {bill.paymentMethod} on {formatDate(bill.paymentDate)}.
             </span>
           </div>
-        </div>
-
-        <div className="p-6 space-y-6">
-          {/* Patient Info */}
-          <div className="grid grid-cols-2 gap-6">
-            <div>
-              <p className="text-xs text-gray-500 uppercase mb-1">Patient</p>
-              <p className="font-medium">{bill.patient?.firstName} {bill.patient?.lastName}</p>
-              <p className="text-sm text-gray-500">{bill.patient?.email}</p>
-            </div>
-            <div>
-              <p className="text-xs text-gray-500 uppercase mb-1">Date</p>
-              <p className="font-medium">{new Date(bill.createdAt).toLocaleDateString()}</p>
-              {bill.dueDate && <p className="text-sm text-gray-500">Due: {new Date(bill.dueDate).toLocaleDateString()}</p>}
-            </div>
-          </div>
-
-          {/* Items Table */}
-          <div className="border rounded-lg overflow-hidden">
-            <table className="w-full">
-              <thead className="bg-gray-50">
-                <tr>
-                  <th className="text-left px-4 py-3 text-sm font-semibold text-gray-600">Description</th>
-                  <th className="text-center px-4 py-3 text-sm font-semibold text-gray-600">Qty</th>
-                  <th className="text-right px-4 py-3 text-sm font-semibold text-gray-600">Unit Price</th>
-                  <th className="text-right px-4 py-3 text-sm font-semibold text-gray-600">Total</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y">
-                {(bill.items || []).map((item, i) => (
-                  <tr key={i}>
-                    <td className="px-4 py-3">{item.description}</td>
-                    <td className="px-4 py-3 text-center">{item.quantity}</td>
-                    <td className="px-4 py-3 text-right">${item.unitPrice.toFixed(2)}</td>
-                    <td className="px-4 py-3 text-right">${item.total.toFixed(2)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-
-          {/* Totals */}
-          <div className="flex justify-end">
-            <div className="w-64 space-y-2">
-              <div className="flex justify-between text-sm"><span className="text-gray-500">Subtotal</span><span>${bill.subtotal.toFixed(2)}</span></div>
-              {bill.discount > 0 && <div className="flex justify-between text-sm"><span className="text-gray-500">Discount</span><span className="text-green-600">-${bill.discount.toFixed(2)}</span></div>}
-              <div className="flex justify-between text-sm"><span className="text-gray-500">Tax (8%)</span><span>${bill.tax.toFixed(2)}</span></div>
-              <div className="flex justify-between text-lg font-bold pt-2 border-t"><span>Total</span><span className="text-primary">${bill.total.toFixed(2)}</span></div>
-            </div>
-          </div>
-
-          {/* Payment Info */}
-          {bill.status === 'PAID' && (
-            <div className="p-4 bg-green-50 border border-green-200 rounded-lg flex items-center gap-3">
-              <CheckCircle className="w-5 h-5 text-green-600" />
-              <div>
-                <p className="font-medium text-green-800">Payment Complete</p>
-                <p className="text-sm text-green-600">
-                  Paid via {bill.paymentMethod} on {bill.paymentDate && new Date(bill.paymentDate).toLocaleDateString()}
-                </p>
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* Actions */}
-        {bill.status !== 'PAID' && (
-          <div className="p-6 bg-gray-50 border-t">
-            <p className="text-sm font-medium text-gray-700 mb-3">Process Payment</p>
-            <div className="flex gap-3">
-              {paymentMethods.map(method => (
-                <button key={method.id} onClick={() => handlePayment(method.id)} disabled={processing} className="flex-1 flex items-center justify-center gap-2 px-4 py-3 bg-primary text-white rounded-lg hover:bg-primary-dark disabled:opacity-50">
-                  <method.icon className="w-5 h-5" />
-                  {method.label}
-                </button>
-              ))}
-            </div>
-          </div>
         )}
-      </div>
+      </Card>
+
+      {/* Payment Modal */}
+      <Modal
+        open={payModalOpen}
+        onClose={() => setPayModalOpen(false)}
+        title="Process Invoice Payment"
+        subtitle={`Remaining balance: ${formatCurrency(remainingBalance)}`}
+      >
+        <form onSubmit={handleProcessPayment} className="space-y-4">
+          <Select
+            label="Payment Method"
+            value={paymentMethod}
+            onChange={(e) => setPaymentMethod(e.target.value)}
+            required
+          >
+            <option value="CARD">Credit / Debit Card</option>
+            <option value="ONLINE">Online Bank Transfer</option>
+            {isFinanceStaff && <option value="CASH">Cash (Front Desk)</option>}
+            {isFinanceStaff && <option value="INSURANCE">Insurance Settlement</option>}
+          </Select>
+
+          {isFinanceStaff && (
+            <Input
+              label="Payment Amount (USD $)"
+              type="number"
+              step="0.01"
+              min="0.01"
+              max={remainingBalance.toFixed(2)}
+              value={paymentAmount}
+              onChange={(e) => setPaymentAmount(e.target.value)}
+              hint="Enter a smaller amount to record a partial payment."
+              required
+            />
+          )}
+
+          <div className="flex justify-end gap-2.5 pt-2">
+            <Button variant="outline" onClick={() => setPayModalOpen(false)}>
+              Cancel
+            </Button>
+            <Button type="submit" variant="primary" loading={paying}>
+              Confirm Payment ({formatCurrency(isFinanceStaff ? paymentAmount : remainingBalance)})
+            </Button>
+          </div>
+        </form>
+      </Modal>
     </div>
   );
 }
