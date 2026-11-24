@@ -7,7 +7,7 @@ const tokenSchema = new mongoose.Schema({
     trim: true,
     lowercase: true
   },
-  token: {
+  tokenHash: {
     type: String,
     required: true
   },
@@ -16,11 +16,17 @@ const tokenSchema = new mongoose.Schema({
     enum: ['REGISTER', 'RESET_PASSWORD'],
     required: true
   },
+  attempts: {
+    type: Number,
+    default: 0
+  },
   createdAt: {
     type: Date,
     default: Date.now,
-    expires: 600 // This document will automatically be deleted 10 minutes (600s) after creation
+    expires: 600 // Auto-expire after 10 minutes
   }
 });
+
+tokenSchema.index({ email: 1, type: 1 });
 
 export const Token = mongoose.model('Token', tokenSchema);
