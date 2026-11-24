@@ -1,44 +1,43 @@
-// Login Page
 import { useState } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../../store/AuthContext';
 import { authApi } from '../../services/api';
-import { Eye, EyeOff, Activity, Mail, KeyRound } from 'lucide-react';
+import AuthLayout from '../../components/layout/AuthLayout';
+import { Button, Input, ErrorAlert, useToast } from '../../components/ui';
+import { Mail, Lock, Eye, EyeOff, KeyRound, CheckCircle2, ArrowLeft } from 'lucide-react';
 
 export default function Login() {
   const { login } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
-  
-  // View states: 'login', 'forgot_email', 'forgot_otp'
-  const [viewState, setViewState] = useState('login');
-  
-  const [formData, setFormData] = useState({ 
-    email: '', 
-    password: '',
-    otp: '',
-    newPassword: '',
-    confirmNewPassword: ''
-  });
-  
+  const toast = useToast();
+
+  const [view, setView] = useState('login'); // 'login' | 'forgot_email' | 'forgot_otp'
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [otp, setOtp] = useState('');
+  const [newPassword, setNewPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
-  const [success, setSuccess] = useState('');
+  const [infoMsg, setInfoMsg] = useState('');
   const [loading, setLoading] = useState(false);
 
-  const handleLoginSubmit = async (e) => {
+  const handleLogin = async (e) => {
     e.preventDefault();
     setError('');
-    setSuccess('');
     setLoading(true);
-
     try {
-      await login(formData.email, formData.password);
-      
-      const from = location.state?.from || '/dashboard';
+      await login(email.trim(), password);
+      toast.success('Welcome back to HealthCore Medical Center');
+      const from = location.state?.from;
       const appointmentData = location.state?.appointmentData;
-      
-      navigate(from, { state: appointmentData, replace: true });
+      if (from === '/appointment' && appointmentData) {
+        navigate('/appointment', { state: { appointmentData }, replace: true });
+      } else if (from && typeof from === 'string' && from.startsWith('/')) {
+        navigate(from, { replace: true });
+      } else {
+        navigate('/dashboard', { replace: true });
+      }
     } catch (err) {
       setError(err.message || 'Invalid email or password');
     } finally {
@@ -46,246 +45,228 @@ export default function Login() {
     }
   };
 
-  const handleForgotEmailSubmit = async (e) => {
+  const handleRequestResetOtp = async (e) => {
     e.preventDefault();
     setError('');
-    setSuccess('');
-    
-    if (!formData.email) {
-      setError('Please enter your email address');
-      return;
-    }
-
+    setInfoMsg('');
     setLoading(true);
     try {
-      await authApi.forgotPassword(formData.email);
-      setViewState('forgot_otp');
-      setSuccess('OTP sent to your email. Please check your inbox.');
+      const res = await authApi.forgotPassword(email.trim());
+      setInfoMsg(res.message || 'Verification code sent.');
+      setView('forgot_otp');
     } catch (err) {
-      setError(err.message || 'Failed to send OTP. Make sure the email is registered.');
+      setError(err.message || 'Unable to send reset code');
     } finally {
       setLoading(false);
     }
   };
 
-  const handleResetPasswordSubmit = async (e) => {
+  const handleResetPassword = async (e) => {
     e.preventDefault();
     setError('');
-    setSuccess('');
-    
-    if (formData.newPassword !== formData.confirmNewPassword) {
-      setError('Passwords do not match');
+    if (!/^\d{6}$/.test(otp.trim())) {
+      setError('Please enter the 6-digit verification code.');
       return;
     }
-    if (formData.newPassword.length < 6) {
-      setError('Password must be at least 6 characters');
-      return;
-    }
-
     setLoading(true);
     try {
-      await authApi.resetPassword(formData.email, formData.otp, formData.newPassword);
-      setViewState('login');
-      setSuccess('Password reset successfully. You can now log in.');
-      setFormData(prev => ({ ...prev, password: '', otp: '', newPassword: '', confirmNewPassword: '' }));
+      const res = await authApi.resetPassword(email.trim(), otp.trim(), newPassword);
+      toast.success(res.message || 'Password updated. Please sign in.');
+      setPassword('');
+      setOtp('');
+      setNewPassword('');
+      setInfoMsg('Password reset complete. Sign in with your new password.');
+      setView('login');
     } catch (err) {
-      setError(err.message || 'Failed to reset password. OTP might be invalid or expired.');
+      setError(err.message || 'Failed to reset password');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const titles = {
+    login: {
+      title: 'Sign in to your portal',
+      subtitle: 'Access appointments, medical records, prescriptions, and billing.'
+    },
+    forgot_email: {
+      title: 'Reset your password',
+      subtitle: 'Enter your registered email address to receive a 6-digit verification code.'
+    },
+    forgot_otp: {
+      title: 'Verify code & set new password',
+      subtitle: `Enter the 6-digit code sent to ${email} and choose a strong password.`
     }
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-primary/5 via-background to-secondary/5 flex items-center justify-center p-4">
-      <div className="w-full max-w-md">
-        {/* Logo */}
-        <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-16 h-16 bg-gradient-to-br from-primary to-primary-dark rounded-2xl mb-4">
-            <Activity className="w-8 h-8 text-white" />
+    <AuthLayout title={titles[view].title} subtitle={titles[view].subtitle}>
+      {error && <ErrorAlert message={error} className="mb-5" />}
+
+      {infoMsg && (
+        <div
+          role="status"
+          className="mb-5 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 flex items-start gap-2.5 text-sm text-emerald-800"
+        >
+          <CheckCircle2 className="w-5 h-5 shrink-0 text-emerald-600 mt-0.5" aria-hidden="true" />
+          <span>{infoMsg}</span>
+        </div>
+      )}
+
+      {view === 'login' && (
+        <form onSubmit={handleLogin} className="space-y-4">
+          <Input
+            label="Email Address"
+            type="email"
+            icon={Mail}
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            placeholder="you@example.com"
+            autoComplete="email"
+            required
+          />
+
+          <div>
+            <div className="relative">
+              <Input
+                label="Password"
+                type={showPassword ? 'text' : 'password'}
+                icon={Lock}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="Enter your password"
+                autoComplete="current-password"
+                inputClassName="pr-10"
+                required
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword((prev) => !prev)}
+                aria-label={showPassword ? 'Hide password' : 'Show password'}
+                className="absolute right-3 top-[34px] text-slate-500 hover:text-slate-800 p-1 rounded"
+              >
+                {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              </button>
+            </div>
+            <div className="mt-2 flex justify-end">
+              <button
+                type="button"
+                onClick={() => {
+                  setError('');
+                  setInfoMsg('');
+                  setView('forgot_email');
+                }}
+                className="text-xs font-semibold text-primary-700 hover:underline"
+              >
+                Forgot password?
+              </button>
+            </div>
           </div>
-          <h1 className="text-2xl font-bold text-gray-900">HealthCore HMS</h1>
-          <p className="text-gray-500 mt-1">
-            {viewState === 'login' ? 'Sign in to your account' : 'Reset your password'}
+
+          <Button type="submit" loading={loading} size="lg" className="w-full">
+            Sign In
+          </Button>
+
+          <p className="text-center text-sm text-slate-600 pt-2">
+            New patient?{' '}
+            <Link to="/register" className="font-semibold text-primary-700 hover:underline">
+              Create a patient account
+            </Link>
           </p>
-        </div>
+        </form>
+      )}
 
-        {/* Form Box */}
-        <div className="bg-white rounded-2xl shadow-xl p-8">
-          {error && (
-            <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg text-red-600 text-sm">
-              {error}
-            </div>
-          )}
-          {success && (
-            <div className="mb-6 p-4 bg-green-50 border border-green-200 rounded-lg text-green-700 text-sm">
-              {success}
-            </div>
-          )}
+      {view === 'forgot_email' && (
+        <form onSubmit={handleRequestResetOtp} className="space-y-4">
+          <Input
+            label="Registered Email Address"
+            type="email"
+            icon={Mail}
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            placeholder="you@example.com"
+            required
+          />
+          <Button type="submit" loading={loading} size="lg" className="w-full">
+            Send Verification Code
+          </Button>
+          <button
+            type="button"
+            onClick={() => {
+              setError('');
+              setView('login');
+            }}
+            className="w-full inline-flex items-center justify-center gap-1.5 text-sm font-medium text-slate-600 hover:text-slate-900 pt-1"
+          >
+            <ArrowLeft className="w-4 h-4" />
+            Back to Sign In
+          </button>
+        </form>
+      )}
 
-          {viewState === 'login' && (
-            <form onSubmit={handleLoginSubmit} className="space-y-5">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Email</label>
-                <input
-                  type="email"
-                  value={formData.email}
-                  onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                  placeholder="Enter your email"
-                  className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-colors"
-                  required
-                />
-              </div>
+      {view === 'forgot_otp' && (
+        <form onSubmit={handleResetPassword} className="space-y-4">
+          <Input
+            label="6-Digit Verification Code"
+            type="text"
+            inputMode="numeric"
+            maxLength={6}
+            icon={KeyRound}
+            value={otp}
+            onChange={(e) => setOtp(e.target.value.replace(/\D/g, '').slice(0, 6))}
+            placeholder="123456"
+            inputClassName="font-mono tracking-widest"
+            required
+          />
 
-              <div>
-                <div className="flex items-center justify-between mb-2">
-                  <label className="block text-sm font-medium text-gray-700">Password</label>
-                  <button 
-                    type="button" 
-                    onClick={() => { setViewState('forgot_email'); setError(''); setSuccess(''); }}
-                    className="text-sm font-medium text-primary hover:underline"
-                  >
-                    Forgot Password?
-                  </button>
-                </div>
-                <div className="relative">
-                  <input
-                    type={showPassword ? 'text' : 'password'}
-                    value={formData.password}
-                    onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                    placeholder="Enter your password"
-                    className="w-full px-4 py-3 pr-12 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-colors"
-                    required
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowPassword(!showPassword)}
-                    className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
-                  >
-                    {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
-                  </button>
-                </div>
-              </div>
+          <div className="relative">
+            <Input
+              label="New Password"
+              type={showPassword ? 'text' : 'password'}
+              icon={Lock}
+              value={newPassword}
+              onChange={(e) => setNewPassword(e.target.value)}
+              placeholder="Minimum 8 chars (A-z, 0-9)"
+              hint="Must include at least 8 characters, one uppercase, one lowercase, and one number."
+              inputClassName="pr-10"
+              required
+            />
+            <button
+              type="button"
+              onClick={() => setShowPassword((prev) => !prev)}
+              aria-label={showPassword ? 'Hide password' : 'Show password'}
+              className="absolute right-3 top-[34px] text-slate-500 hover:text-slate-800 p-1 rounded"
+            >
+              {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+            </button>
+          </div>
 
-              <button
-                type="submit"
-                disabled={loading}
-                className="w-full py-3 bg-gradient-to-r from-primary to-primary-dark text-white font-medium rounded-lg hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {loading ? 'Signing in...' : 'Sign In'}
-              </button>
-              
-              <div className="mt-6 text-center">
-                <p className="text-sm text-gray-500">
-                  Don't have an account?{' '}
-                  <Link to="/register" className="text-primary font-medium hover:underline">
-                    Register
-                  </Link>
-                </p>
-              </div>
-            </form>
-          )}
+          <Button type="submit" loading={loading} size="lg" className="w-full">
+            Update Password
+          </Button>
 
-          {viewState === 'forgot_email' && (
-            <form onSubmit={handleForgotEmailSubmit} className="space-y-5">
-              <div className="text-center mb-6">
-                 <Mail className="w-10 h-10 text-primary mx-auto mb-2 opacity-80" />
-                 <p className="text-sm text-gray-500">Enter your email address and we'll send you an OTP to reset your password.</p>
-              </div>
-              
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Registered Email</label>
-                <input
-                  type="email"
-                  value={formData.email}
-                  onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                  placeholder="Enter your email"
-                  className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-colors"
-                  required
-                />
-              </div>
-
-              <button
-                type="submit"
-                disabled={loading}
-                className="w-full py-3 bg-gradient-to-r from-primary to-primary-dark text-white font-medium rounded-lg hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {loading ? 'Sending OTP...' : 'Send OTP'}
-              </button>
-
-              <button
-                type="button"
-                onClick={() => { setViewState('login'); setError(''); setSuccess(''); }}
-                className="w-full py-3 bg-white border border-gray-200 text-gray-700 font-medium rounded-lg hover:bg-gray-50 transition-colors mt-3"
-              >
-                Back to Sign In
-              </button>
-            </form>
-          )}
-
-          {viewState === 'forgot_otp' && (
-            <form onSubmit={handleResetPasswordSubmit} className="space-y-5">
-              <div className="text-center mb-6">
-                 <KeyRound className="w-10 h-10 text-primary mx-auto mb-2 opacity-80" />
-                 <p className="text-sm text-gray-500">Enter the verification code sent to <strong>{formData.email}</strong> and pick a new password.</p>
-              </div>
-              
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Verification Code (OTP)</label>
-                <input
-                  type="text"
-                  maxLength="6"
-                  value={formData.otp}
-                  onChange={(e) => setFormData({ ...formData, otp: e.target.value.replace(/[^0-9]/g, '') })}
-                  placeholder="000000"
-                  className="w-full text-center tracking-[0.5em] text-2xl px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-colors"
-                  required
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">New Password</label>
-                <input
-                  type="password"
-                  value={formData.newPassword}
-                  onChange={(e) => setFormData({ ...formData, newPassword: e.target.value })}
-                  placeholder="Create new password"
-                  className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-colors"
-                  required
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Confirm New Password</label>
-                <input
-                  type="password"
-                  value={formData.confirmNewPassword}
-                  onChange={(e) => setFormData({ ...formData, confirmNewPassword: e.target.value })}
-                  placeholder="Confirm new password"
-                  className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-colors"
-                  required
-                />
-              </div>
-
-              <button
-                type="submit"
-                disabled={loading}
-                className="w-full py-3 bg-gradient-to-r from-primary to-primary-dark text-white font-medium rounded-lg hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed mt-2"
-              >
-                {loading ? 'Resetting...' : 'Reset Password'}
-              </button>
-
-              <button
-                type="button"
-                onClick={() => { setViewState('forgot_email'); setError(''); setSuccess(''); }}
-                className="w-full py-3 bg-white border border-gray-200 text-gray-700 font-medium rounded-lg hover:bg-gray-50 transition-colors mt-3"
-              >
-                Back to Email
-              </button>
-            </form>
-          )}
-
-        </div>
-      </div>
-    </div>
+          <div className="flex items-center justify-between text-xs pt-1">
+            <button
+              type="button"
+              onClick={() => {
+                setError('');
+                setView('forgot_email');
+              }}
+              className="font-medium text-slate-600 hover:text-slate-900"
+            >
+              Change email
+            </button>
+            <button
+              type="button"
+              onClick={handleRequestResetOtp}
+              disabled={loading}
+              className="font-semibold text-primary-700 hover:underline"
+            >
+              Resend code
+            </button>
+          </div>
+        </form>
+      )}
+    </AuthLayout>
   );
 }
