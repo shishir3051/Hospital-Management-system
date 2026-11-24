@@ -1,345 +1,748 @@
-import { useState, useEffect } from 'react';
-import { useParams, useNavigate, Link } from 'react-router-dom';
-import { 
-  patientsApi, 
-  appointmentsApi, 
-  prescriptionsApi,
-  billingApi 
-} from '../../services/api';
-import { 
-  ArrowLeft, 
-  FileText, 
-  Plus, 
-  Search, 
-  Filter, 
-  Calendar, 
-  User, 
-  Stethoscope, 
-  Activity,
-  Droplets,
-  Clipboard,
-  Pill,
-  Download,
-  Eye,
-  Edit2
-} from 'lucide-react';
+import { useState, useEffect, useCallback } from 'react';
+import { useParams, Link, useNavigate } from 'react-router-dom';
+import { patientsApi, appointmentsApi, prescriptionsApi, billingApi, labsApi } from '../../services/api';
 import { useAuth } from '../../store/AuthContext';
+import {
+  PageHeader,
+  Card,
+  Button,
+  Avatar,
+  Badge,
+  StatusBadge,
+  Input,
+  Modal,
+  LoadingSpinner,
+  ErrorAlert,
+  EmptyState,
+  PrintablePrescriptionModal,
+  useToast
+} from '../../components/ui';
+import {
+  calculateAge,
+  formatCurrency,
+  formatDate,
+  formatDateTime,
+  formatShortId
+} from '../../config/site';
+import {
+  ArrowLeft,
+  Printer,
+  Plus,
+  Activity,
+  AlertTriangle,
+  Calendar,
+  Pill,
+  CreditCard,
+  FileText,
+  HeartPulse,
+  ShieldCheck,
+  FlaskConical
+} from 'lucide-react';
+import {
+  Chart as ChartJS,
+  CategoryScale,
+  LinearScale,
+  PointElement,
+  LineElement,
+  Title,
+  Tooltip,
+  Legend
+} from 'chart.js';
+import { Line } from 'react-chartjs-2';
+
+ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend);
 
 export default function PatientRecords() {
   const { id } = useParams();
   const navigate = useNavigate();
   const { user } = useAuth();
-  
+  const toast = useToast();
+
   const [patient, setPatient] = useState(null);
   const [appointments, setAppointments] = useState([]);
   const [prescriptions, setPrescriptions] = useState([]);
+  const [labOrders, setLabOrders] = useState([]);
   const [bills, setBills] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
   const [activeTab, setActiveTab] = useState('summary');
+  const [selectedRx, setSelectedRx] = useState(null);
 
-  useEffect(() => {
-    loadEHRData();
-  }, [id]);
+  const [vitalsModalOpen, setVitalsModalOpen] = useState(false);
+  const [savingVitals, setSavingVitals] = useState(false);
+  const [vitalsForm, setVitalsForm] = useState({
+    bloodPressure: '',
+    heartRate: '',
+    temperature: '',
+    oxygenSaturation: '',
+    weight: ''
+  });
 
-  const loadEHRData = async () => {
+  const canPrescribe = ['ADMIN', 'DOCTOR'].includes(user?.role);
+  const canRecordVitals = ['ADMIN', 'DOCTOR', 'NURSE'].includes(user?.role);
+  const canViewBilling = ['ADMIN', 'ACCOUNTANT', 'PATIENT'].includes(user?.role);
+
+  const loadEHR = useCallback(async () => {
     try {
-      const [patientData, aptData, presData, billData] = await Promise.all([
+      setLoading(true);
+      setError('');
+      const [patRes, aptRes, rxRes, labRes, billRes] = await Promise.allSettled([
         patientsApi.getById(id),
-        appointmentsApi.getAll({ patientId: id }),
-        prescriptionsApi.getAll({ patientId: id }),
-        billingApi.getByPatient(id)
+        appointmentsApi.getAll({ patientId: id, limit: 50 }),
+        prescriptionsApi.getAll({ patientId: id, limit: 50 }),
+        labsApi.getAll({ patientId: id, limit: 50 }),
+        canViewBilling ? billingApi.getByPatient(id) : Promise.resolve({ bills: [] })
       ]);
-      setPatient(patientData);
-      setAppointments(aptData.appointments || []);
-      setPrescriptions(presData.prescriptions || []);
-      setBills(billData.bills || []);
+
+      if (patRes.status !== 'fulfilled') {
+        throw patRes.reason || new Error('Failed to load patient EHR');
+      }
+
+      const p = patRes.value;
+      setPatient(p);
+      setVitalsForm({
+        bloodPressure: p.vitals?.bloodPressure || '',
+        heartRate: p.vitals?.heartRate ?? '',
+        temperature: p.vitals?.temperature ?? '',
+        oxygenSaturation: p.vitals?.oxygenSaturation ?? '',
+        weight: p.vitals?.weight ?? ''
+      });
+      setAppointments(aptRes.status === 'fulfilled' ? aptRes.value.appointments || [] : []);
+      setPrescriptions(rxRes.status === 'fulfilled' ? rxRes.value.prescriptions || [] : []);
+      setLabOrders(labRes.status === 'fulfilled' ? labRes.value.orders || [] : []);
+      setBills(billRes.status === 'fulfilled' ? billRes.value.bills || [] : []);
     } catch (err) {
-      console.error('Failed to load EHR:', err);
+      setError(err.message || 'Unable to load electronic health record');
     } finally {
       setLoading(false);
     }
+  }, [id, canViewBilling]);
+
+  useEffect(() => {
+    loadEHR();
+  }, [loadEHR]);
+
+  const handleSaveVitals = async (e) => {
+    e.preventDefault();
+    setSavingVitals(true);
+    try {
+      const vitals = {};
+      if (vitalsForm.bloodPressure.trim()) vitals.bloodPressure = vitalsForm.bloodPressure.trim();
+      if (vitalsForm.heartRate !== '') vitals.heartRate = Number(vitalsForm.heartRate);
+      if (vitalsForm.temperature !== '') vitals.temperature = Number(vitalsForm.temperature);
+      if (vitalsForm.oxygenSaturation !== '') vitals.oxygenSaturation = Number(vitalsForm.oxygenSaturation);
+      if (vitalsForm.weight !== '') vitals.weight = Number(vitalsForm.weight);
+
+      const res = await patientsApi.update(id, { vitals });
+      setPatient((prev) => ({
+        ...prev,
+        vitals: res.patient?.vitals,
+        vitalsHistory: res.patient?.vitalsHistory || prev.vitalsHistory
+      }));
+      toast.success('Clinical vitals logged to EHR history.');
+      setVitalsModalOpen(false);
+    } catch (err) {
+      toast.error(err.message || 'Failed to update vitals');
+    } finally {
+      setSavingVitals(false);
+    }
   };
 
-  if (loading) return (
-    <div className="flex flex-col items-center justify-center p-20 animate-pulse">
-       <div className="w-12 h-12 border-4 border-primary border-t-transparent rounded-full animate-spin"></div>
-       <p className="mt-4 text-slate-400 font-bold uppercase tracking-widest text-[10px]">Accessing Electronic Health Records...</p>
-    </div>
-  );
+  if (loading) return <LoadingSpinner label="Loading electronic health record..." />;
 
-  if (!patient) return <div className="p-20 text-center font-bold text-slate-400">Patient Data Not Found</div>;
+  if (error || !patient) {
+    return (
+      <div className="space-y-4">
+        <ErrorAlert message={error || 'Patient record not found'} onRetry={loadEHR} />
+        <Button variant="outline" onClick={() => navigate('/dashboard')}>
+          <ArrowLeft className="w-4 h-4" />
+          Back to Dashboard
+        </Button>
+      </div>
+    );
+  }
+
+  const age = calculateAge(patient.dateOfBirth);
+  const hasAllergy = patient.allergies && patient.allergies.toLowerCase() !== 'none';
+  const vitals = patient.vitals;
+  const vitalsHistory = Array.isArray(patient.vitalsHistory) ? patient.vitalsHistory : [];
+
+  const vitalsTrendData = {
+    labels: vitalsHistory.map((v) => formatDate(v.updatedAt, { month: 'short', day: 'numeric' })),
+    datasets: [
+      {
+        label: 'Heart Rate (bpm)',
+        data: vitalsHistory.map((v) => v.heartRate ?? null),
+        borderColor: '#0F766E',
+        backgroundColor: 'rgba(15, 118, 110, 0.15)',
+        tension: 0.3,
+        spanGaps: true
+      },
+      {
+        label: 'Systolic BP (mmHg)',
+        data: vitalsHistory.map((v) => v.systolic ?? null),
+        borderColor: '#1E3A8A',
+        backgroundColor: 'rgba(30, 58, 138, 0.12)',
+        tension: 0.3,
+        spanGaps: true
+      },
+      {
+        label: 'Diastolic BP (mmHg)',
+        data: vitalsHistory.map((v) => v.diastolic ?? null),
+        borderColor: '#0284C7',
+        backgroundColor: 'rgba(2, 132, 199, 0.12)',
+        tension: 0.3,
+        spanGaps: true
+      }
+    ]
+  };
 
   const tabs = [
-    { id: 'summary', label: 'Clinical Summary', icon: Clipboard },
-    { id: 'appointments', label: 'Visit History', icon: Calendar },
-    { id: 'prescriptions', label: 'Medications', icon: Pill },
-    { id: 'billing', label: 'Financials', icon: FileText },
+    { id: 'summary', label: 'Clinical Summary & Vitals', icon: Activity },
+    { id: 'visits', label: `Visits (${appointments.length})`, icon: Calendar },
+    { id: 'medications', label: `Prescriptions (${prescriptions.length})`, icon: Pill },
+    { id: 'labs', label: `Lab Reports (${labOrders.length})`, icon: FlaskConical },
+    ...(canViewBilling ? [{ id: 'billing', label: `Billing (${bills.length})`, icon: CreditCard }] : [])
   ];
 
   return (
-    <div className="max-w-7xl mx-auto py-8 animate-fadeIn">
-      {/* Header */}
-      <div className="flex flex-col lg:flex-row items-center justify-between gap-6 mb-12">
-        <div className="flex items-center gap-6">
-          <button 
-            onClick={() => navigate(-1)}
-            className="w-12 h-12 bg-white rounded-2xl flex items-center justify-center shadow-sm border border-slate-100 hover:bg-slate-50 transition-all group"
-          >
-            <ArrowLeft className="w-6 h-6 text-slate-400 group-hover:text-primary transition-colors" />
-          </button>
+    <div className="space-y-6 animate-fadeIn">
+      <PageHeader
+        breadcrumb={
+          user?.role !== 'PATIENT' && (
+            <Link
+              to={`/dashboard/patients/${patient._id}`}
+              className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-600 hover:text-primary-700 no-print"
+            >
+              <ArrowLeft className="w-3.5 h-3.5" aria-hidden="true" />
+              Back to Patient Profile
+            </Link>
+          )
+        }
+        title={`Electronic Health Record — ${patient.userId?.firstName} ${patient.userId?.lastName}`}
+        subtitle={`PID ${formatShortId(patient._id, '')} · ${patient.gender} ${age !== null ? `· ${age} yrs` : ''} · Blood Group: ${patient.bloodGroup || 'Unrecorded'}`}
+        actions={
+          <div className="flex flex-wrap items-center gap-2 no-print">
+            <Button variant="outline" size="sm" onClick={() => window.print()}>
+              <Printer className="w-4 h-4" aria-hidden="true" />
+              Print EHR
+            </Button>
+            {canRecordVitals && (
+              <Button variant="outline" size="sm" onClick={() => setVitalsModalOpen(true)}>
+                <HeartPulse className="w-4 h-4" aria-hidden="true" />
+                Record Vitals
+              </Button>
+            )}
+            {canPrescribe && (
+              <Link to={`/dashboard/prescriptions/new?patientId=${patient._id}`}>
+                <Button variant="primary" size="sm">
+                  <Plus className="w-4 h-4" aria-hidden="true" />
+                  Write Prescription
+                </Button>
+              </Link>
+            )}
+          </div>
+        }
+      />
+
+      {/* Clinical Header Banner */}
+      <Card className="p-5 flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div className="flex items-center gap-4">
+          <Avatar
+            src={patient.userId?.avatar}
+            firstName={patient.userId?.firstName}
+            lastName={patient.userId?.lastName}
+            size="lg"
+          />
           <div>
-            <h1 className="text-3xl font-black text-slate-900 tracking-tight">EHR <span className="text-primary">Profile</span></h1>
-            <p className="text-slate-400 font-black text-[10px] uppercase tracking-widest mt-1">Patient Electronic Health Record Control</p>
+            <h2 className="text-lg font-display font-bold text-slate-900">
+              {patient.userId?.firstName} {patient.userId?.lastName}
+            </h2>
+            <p className="text-xs text-slate-600">
+              DOB: {formatDate(patient.dateOfBirth)} · Phone: {patient.userId?.phone || 'Not provided'}
+            </p>
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              <Badge tone={patient.bloodGroup ? 'primary' : 'neutral'}>
+                Blood: {patient.bloodGroup || 'Unrecorded'}
+              </Badge>
+              {hasAllergy ? (
+                <Badge tone="danger">
+                  <AlertTriangle className="w-3 h-3" aria-hidden="true" />
+                  Allergy: {patient.allergies}
+                </Badge>
+              ) : (
+                <Badge tone="success">
+                  <ShieldCheck className="w-3 h-3" aria-hidden="true" />
+                  No Known Allergies
+                </Badge>
+              )}
+            </div>
           </div>
         </div>
-        
-        <div className="flex items-center gap-4">
-           {['ADMIN', 'DOCTOR'].includes(user?.role) && (
-              <Link 
-                to="/dashboard/prescriptions/new" 
-                state={{ patientId: patient._id }}
-                className="px-6 py-3 bg-primary text-white font-black rounded-xl shadow-lg shadow-primary/20 hover:scale-105 active:scale-95 transition-all flex items-center gap-2 text-xs uppercase tracking-widest"
-              >
-                <Plus className="w-4 h-4" />
-                Issue Prescription
-              </Link>
-           )}
-           <button className="px-6 py-3 bg-white text-slate-600 font-black rounded-xl border border-slate-200 hover:bg-slate-50 transition-all flex items-center gap-2 text-xs uppercase tracking-widest">
-              <Download className="w-4 h-4" />
-              Download Report
-           </button>
+        <div className="text-xs text-slate-600 md:text-right">
+          <p className="font-semibold text-slate-800">Emergency Contact</p>
+          <p>{patient.emergencyContact || 'Not recorded'}</p>
+          <p className="mt-1">Insurance: {patient.insuranceProvider || 'Self-pay'}</p>
         </div>
+      </Card>
+
+      {/* Tabs */}
+      <div className="flex flex-wrap gap-2 border-b border-slate-200 pb-3 no-print" role="tablist">
+        {tabs.map((tab) => (
+          <button
+            key={tab.id}
+            type="button"
+            role="tab"
+            aria-selected={activeTab === tab.id}
+            onClick={() => setActiveTab(tab.id)}
+            className={`inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold transition-colors ${
+              activeTab === tab.id
+                ? 'bg-primary-700 text-white shadow-xs'
+                : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-50'
+            }`}
+          >
+            <tab.icon className="w-4 h-4" aria-hidden="true" />
+            <span>{tab.label}</span>
+          </button>
+        ))}
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
-        {/* Left Column: Patient Quick Stats */}
-        <div className="lg:col-span-1 space-y-8">
-           <div className="bg-white rounded-[2.5rem] p-8 shadow-card border border-slate-100 relative overflow-hidden">
-              <div className="absolute top-0 right-0 w-32 h-32 bg-primary-50 rounded-full translate-x-1/2 -translate-y-1/2 blur-2xl"></div>
-              <div className="flex flex-col items-center text-center relative z-10">
-                 <div className="w-24 h-24 bg-primary text-white rounded-[2rem] flex items-center justify-center text-3xl font-black mb-6 shadow-xl shadow-primary/20">
-                    {patient.userId?.firstName?.[0]}{patient.userId?.lastName?.[0]}
-                 </div>
-                 <h2 className="text-2xl font-black text-slate-900 tracking-tight">{patient.userId?.firstName} {patient.userId?.lastName}</h2>
-                 <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mt-1">UID: {patient._id.slice(-8)}</p>
-                 
-                 <div className="grid grid-cols-2 gap-4 w-full mt-8">
-                    <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100/50">
-                       <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Blood</p>
-                       <p className="text-lg font-black text-rose-500">{patient.bloodGroup || 'O+'}</p>
-                    </div>
-                    <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100/50">
-                       <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Gender</p>
-                       <p className="text-lg font-black text-slate-900">{patient.gender?.charAt(0) || 'M'}</p>
-                    </div>
-                 </div>
+      {/* Tab 1: Clinical Summary & Vitals Trends */}
+      {activeTab === 'summary' && (
+        <div className="space-y-6">
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+            <Card className="lg:col-span-6 space-y-4">
+              <div className="flex items-center justify-between">
+                <h3 className="text-base font-display font-bold text-slate-900">Latest Clinical Vitals</h3>
+                {vitals?.updatedAt && (
+                  <span className="text-xs text-slate-600">Updated {formatDate(vitals.updatedAt)}</span>
+                )}
+              </div>
+              {vitals && (vitals.bloodPressure || vitals.heartRate || vitals.temperature || vitals.oxygenSaturation || vitals.weight) ? (
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                  <div className="rounded-lg bg-slate-50 border border-slate-200 p-3">
+                    <p className="text-xs text-slate-600">Blood Pressure</p>
+                    <p className="text-base font-bold text-slate-900 mt-0.5 tabular-nums">
+                      {vitals.bloodPressure || '—'}
+                    </p>
+                  </div>
+                  <div className="rounded-lg bg-slate-50 border border-slate-200 p-3">
+                    <p className="text-xs text-slate-600">Heart Rate</p>
+                    <p className="text-base font-bold text-slate-900 mt-0.5 tabular-nums">
+                      {vitals.heartRate ? `${vitals.heartRate} bpm` : '—'}
+                    </p>
+                  </div>
+                  <div className="rounded-lg bg-slate-50 border border-slate-200 p-3">
+                    <p className="text-xs text-slate-600">Temperature</p>
+                    <p className="text-base font-bold text-slate-900 mt-0.5 tabular-nums">
+                      {vitals.temperature ? `${vitals.temperature} °F` : '—'}
+                    </p>
+                  </div>
+                  <div className="rounded-lg bg-slate-50 border border-slate-200 p-3">
+                    <p className="text-xs text-slate-600">Oxygen (SpO2)</p>
+                    <p className="text-base font-bold text-slate-900 mt-0.5 tabular-nums">
+                      {vitals.oxygenSaturation ? `${vitals.oxygenSaturation}%` : '—'}
+                    </p>
+                  </div>
+                  <div className="rounded-lg bg-slate-50 border border-slate-200 p-3">
+                    <p className="text-xs text-slate-600">Weight</p>
+                    <p className="text-base font-bold text-slate-900 mt-0.5 tabular-nums">
+                      {vitals.weight ? `${vitals.weight} kg` : '—'}
+                    </p>
+                  </div>
+                </div>
+              ) : (
+                <p className="text-sm text-slate-600">No vitals have been recorded yet.</p>
+              )}
+            </Card>
+
+            <Card className="lg:col-span-6 space-y-4">
+              <h3 className="text-base font-display font-bold text-slate-900">Medical History &amp; Latest Rx</h3>
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wide text-slate-600 mb-2">
+                  Documented Conditions
+                </p>
+                {Array.isArray(patient.medicalHistory) && patient.medicalHistory.length > 0 ? (
+                  <div className="flex flex-wrap gap-1.5">
+                    {patient.medicalHistory.map((item) => (
+                      <Badge key={item} tone="secondary">
+                        {item}
+                      </Badge>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-sm text-slate-600">No chronic conditions documented.</p>
+                )}
               </div>
 
-              <div className="mt-8 space-y-4 pt-8 border-t border-slate-100">
-                 <div className="flex items-center gap-4">
-                    <div className="w-8 h-8 bg-slate-100 rounded-lg flex items-center justify-center text-slate-400">
-                       <Calendar className="w-4 h-4" />
+              <div className="pt-3 border-t border-slate-100">
+                <p className="text-xs font-semibold uppercase tracking-wide text-slate-600 mb-2">
+                  Latest Prescription
+                </p>
+                {prescriptions[0] ? (
+                  <div className="rounded-lg bg-slate-50 border border-slate-200 p-3.5 space-y-2">
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="text-sm font-semibold text-slate-900">{prescriptions[0].diagnosis}</p>
+                      <Button variant="ghost" size="sm" onClick={() => setSelectedRx(prescriptions[0])}>
+                        View Rx
+                      </Button>
                     </div>
-                    <div>
-                       <p className="text-[8px] font-black text-slate-400 uppercase">Age</p>
-                       <p className="text-xs font-bold text-slate-700">32 Years</p>
-                    </div>
-                 </div>
-                 <div className="flex items-center gap-4">
-                    <div className="w-8 h-8 bg-slate-100 rounded-lg flex items-center justify-center text-slate-400">
-                       <Activity className="w-4 h-4" />
-                    </div>
-                    <div>
-                       <p className="text-[8px] font-black text-slate-400 uppercase">Last Contact</p>
-                       <p className="text-xs font-bold text-slate-700">{appointments[0] ? new Date(appointments[0].dateTime).toLocaleDateString() : 'N/A'}</p>
-                    </div>
-                 </div>
+                    <p className="text-xs text-slate-600">
+                      {(prescriptions[0].medications || []).map((m) => `${m.name} (${m.dosage})`).join(', ') ||
+                        'No medications listed'}
+                    </p>
+                  </div>
+                ) : (
+                  <p className="text-sm text-slate-600">No prescriptions issued yet.</p>
+                )}
               </div>
-           </div>
+            </Card>
+          </div>
 
-           {/* Medical Warnings */}
-           <div className="bg-rose-50 rounded-[2.5rem] p-8 border border-rose-100">
-              <div className="flex items-center gap-3 mb-4 text-rose-600">
-                 <ShieldCheck className="w-5 h-5 font-black" />
-                 <h3 className="text-xs font-black uppercase tracking-widest">Medical Alerts</h3>
+          {/* Vitals Longitudinal Trend Chart & Log */}
+          {vitalsHistory.length > 0 && (
+            <Card className="space-y-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="text-base font-display font-bold text-slate-900">
+                    Vitals History &amp; Longitudinal Trend
+                  </h3>
+                  <p className="text-xs text-slate-600">
+                    {vitalsHistory.length} clinical reading{vitalsHistory.length === 1 ? '' : 's'} logged
+                  </p>
+                </div>
               </div>
-              <ul className="space-y-3">
-                 <li className="flex items-center gap-3 text-xs font-bold text-rose-800">
-                    <div className="w-1.5 h-1.5 bg-rose-500 rounded-full animate-pulse"></div>
-                    Penicillin Allergy
-                 </li>
-                 <li className="flex items-center gap-3 text-xs font-bold text-rose-800">
-                    <div className="w-1.5 h-1.5 bg-rose-500 rounded-full animate-pulse"></div>
-                    Chronic Hypertension
-                 </li>
-              </ul>
-           </div>
+
+              {vitalsHistory.length >= 2 && (
+                <div className="h-64">
+                  <Line
+                    data={vitalsTrendData}
+                    options={{
+                      responsive: true,
+                      maintainAspectRatio: false,
+                      plugins: { legend: { position: 'bottom' } },
+                      scales: {
+                        y: { grid: { color: '#F1F5F9' } },
+                        x: { grid: { display: false } }
+                      }
+                    }}
+                  />
+                </div>
+              )}
+
+              <div className="overflow-x-auto border border-slate-200 rounded-xl">
+                <table className="w-full text-left border-collapse text-xs">
+                  <thead className="bg-slate-50 border-b border-slate-200">
+                    <tr>
+                      <th className="px-4 py-2.5 font-semibold text-slate-600">Date</th>
+                      <th className="px-4 py-2.5 font-semibold text-slate-600">BP</th>
+                      <th className="px-4 py-2.5 font-semibold text-slate-600">HR</th>
+                      <th className="px-4 py-2.5 font-semibold text-slate-600">Temp</th>
+                      <th className="px-4 py-2.5 font-semibold text-slate-600">SpO2</th>
+                      <th className="px-4 py-2.5 font-semibold text-slate-600">Weight</th>
+                      <th className="px-4 py-2.5 font-semibold text-slate-600">Recorded By</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-200">
+                    {[...vitalsHistory].reverse().slice(0, 10).map((entry, idx) => (
+                      <tr key={`${entry.updatedAt}-${idx}`}>
+                        <td className="px-4 py-2.5 text-slate-700 whitespace-nowrap">
+                          {formatDateTime(entry.updatedAt)}
+                        </td>
+                        <td className="px-4 py-2.5 font-mono text-slate-900">{entry.bloodPressure || '—'}</td>
+                        <td className="px-4 py-2.5 tabular-nums">{entry.heartRate ? `${entry.heartRate} bpm` : '—'}</td>
+                        <td className="px-4 py-2.5 tabular-nums">{entry.temperature ? `${entry.temperature} °F` : '—'}</td>
+                        <td className="px-4 py-2.5 tabular-nums">{entry.oxygenSaturation ? `${entry.oxygenSaturation}%` : '—'}</td>
+                        <td className="px-4 py-2.5 tabular-nums">{entry.weight ? `${entry.weight} kg` : '—'}</td>
+                        <td className="px-4 py-2.5 text-slate-600">{entry.recordedBy || 'Staff'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </Card>
+          )}
         </div>
+      )}
 
-        {/* Right Column: EHR Content Tabs */}
-        <div className="lg:col-span-3 space-y-8">
-           {/* Tab Navigation */}
-           <div className="bg-white p-2 rounded-3xl shadow-card border border-slate-100 flex items-center gap-2">
-              {tabs.map(tab => (
-                 <button
-                    key={tab.id}
-                    onClick={() => setActiveTab(tab.id)}
-                    className={`flex-grow py-4 px-6 rounded-2xl flex items-center justify-center gap-3 font-black text-[10px] uppercase tracking-widest transition-all ${
-                       activeTab === tab.id 
-                          ? 'bg-primary text-white shadow-lg shadow-primary/20 scale-105' 
-                          : 'text-slate-400 hover:text-slate-600 hover:bg-slate-50'
-                    }`}
-                 >
-                    <tab.icon className="w-4 h-4" />
-                    <span className="hidden sm:inline">{tab.label}</span>
-                 </button>
+      {/* Tab 2: Visits */}
+      {activeTab === 'visits' && (
+        <Card padding="p-0">
+          {appointments.length === 0 ? (
+            <EmptyState
+              icon={Calendar}
+              title="No visit history"
+              description="Clinical visits and SOAP encounter summaries will appear here once scheduled."
+            />
+          ) : (
+            <div className="divide-y divide-slate-200">
+              {appointments.map((apt) => (
+                <div key={apt._id} className="px-6 py-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div className="space-y-1">
+                    <p className="text-sm font-semibold text-slate-900">
+                      Dr. {apt.doctorId?.userId?.firstName} {apt.doctorId?.userId?.lastName}{' '}
+                      <span className="text-slate-500 font-normal">({apt.doctorId?.department || apt.type})</span>
+                    </p>
+                    <p className="text-xs text-slate-600">{formatDateTime(apt.dateTime)}</p>
+                    <p className="text-sm text-slate-700">{apt.reason}</p>
+                    {apt.soapNotes?.assessment && (
+                      <p className="text-xs text-primary-900 bg-primary-50/70 rounded px-2.5 py-1.5 border border-primary-100">
+                        <strong>Assessment{apt.soapNotes.icdCode ? ` (${apt.soapNotes.icdCode})` : ''}:</strong>{' '}
+                        {apt.soapNotes.assessment}
+                      </p>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <StatusBadge status={apt.status} />
+                    <Link to={`/dashboard/appointments/${apt._id}`} className="no-print">
+                      <Button variant="outline" size="sm">Details</Button>
+                    </Link>
+                  </div>
+                </div>
               ))}
-           </div>
+            </div>
+          )}
+        </Card>
+      )}
 
-           {/* Tab Content */}
-           <div className="bg-white rounded-[2.5rem] p-8 lg:p-12 shadow-card border border-slate-100 min-h-[500px] animate-fadeIn">
-              
-              {activeTab === 'summary' && (
-                 <div className="space-y-12">
-                    <div>
-                       <h3 className="text-xl font-black text-slate-900 mb-6 flex items-center gap-3">
-                          <Clipboard className="w-6 h-6 text-primary" />
-                          Clinical Observation
-                       </h3>
-                       <p className="text-slate-600 leading-relaxed font-medium">
-                          Patient presents with chronic respiratory symptoms. Initial diagnosis suggests mild asthma exacerbation. 
-                          Regular monitoring of peak flow and adherence to inhaler regimen is required. 
-                          Medical history indicates no surgical intervention in the last 24 months.
-                       </p>
+      {/* Tab 3: Prescriptions */}
+      {activeTab === 'medications' && (
+        <div className="space-y-4">
+          {prescriptions.length === 0 ? (
+            <Card>
+              <EmptyState
+                icon={Pill}
+                title="No prescriptions on file"
+                description="Issued digital prescriptions and dosage schedules will appear here."
+                action={
+                  canPrescribe && (
+                    <Link to={`/dashboard/prescriptions/new?patientId=${patient._id}`}>
+                      <Button variant="primary" size="sm">
+                        <Plus className="w-4 h-4" />
+                        Write Prescription
+                      </Button>
+                    </Link>
+                  )
+                }
+              />
+            </Card>
+          ) : (
+            prescriptions.map((rx) => (
+              <Card key={rx._id} className="space-y-4">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="font-mono text-xs font-semibold text-primary-800">
+                        {formatShortId(rx._id, 'RX-')}
+                      </span>
+                      <StatusBadge status={rx.status || 'ACTIVE'} />
+                      {rx.dispenseStatus && <StatusBadge status={rx.dispenseStatus} />}
                     </div>
-
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                       <div className="p-8 bg-slate-50 rounded-[2.5rem] border border-slate-100">
-                          <h4 className="font-black text-slate-900 mb-4 uppercase text-[10px] tracking-widest">Active Medications</h4>
-                          <div className="space-y-3">
-                             {prescriptions[0]?.medications?.map((med, i) => (
-                                <div key={i} className="flex items-center justify-between text-sm font-bold">
-                                   <span className="text-slate-700">{med.name}</span>
-                                   <span className="px-3 py-1 bg-white rounded-lg border border-slate-100 text-[10px] text-primary">{med.dosage}</span>
-                                </div>
-                             ))}
-                          </div>
-                       </div>
-                       <div className="p-8 bg-slate-50 rounded-[2.5rem] border border-slate-100">
-                          <h4 className="font-black text-slate-900 mb-4 uppercase text-[10px] tracking-widest">Recent Vitals</h4>
-                          <div className="space-y-4">
-                             <div className="flex justify-between items-center text-sm">
-                                <span className="text-slate-500 font-bold uppercase text-[9px]">Pulse</span>
-                                <span className="font-black text-slate-900">72 BPM</span>
-                             </div>
-                             <div className="flex justify-between items-center text-sm">
-                                <span className="text-slate-500 font-bold uppercase text-[9px]">Temp</span>
-                                <span className="font-black text-slate-900">98.6 °F</span>
-                             </div>
-                             <div className="flex justify-between items-center text-sm">
-                                <span className="text-slate-500 font-bold uppercase text-[9px]">SPO2</span>
-                                <span className="font-black text-primary">99%</span>
-                             </div>
-                          </div>
-                       </div>
+                    <h3 className="text-base font-display font-bold text-slate-900 mt-1">{rx.diagnosis}</h3>
+                    <p className="text-xs text-slate-600 mt-0.5">
+                      Prescribed by Dr. {rx.doctorId?.userId?.firstName} {rx.doctorId?.userId?.lastName} on{' '}
+                      {formatDate(rx.issuedDate || rx.createdAt)}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2 no-print">
+                    <Button variant="outline" size="sm" onClick={() => setSelectedRx(rx)}>
+                      <FileText className="w-4 h-4" />
+                      View / Print Rx
+                    </Button>
+                  </div>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  {(rx.medications || []).map((med, idx) => (
+                    <div
+                      key={`${rx._id}-${med.name}-${idx}`}
+                      className="rounded-lg bg-slate-50 border border-slate-200 p-3.5 text-sm"
+                    >
+                      <p className="font-semibold text-slate-900">
+                        {med.name} <span className="font-mono text-xs text-primary-800">{med.dosage}</span>
+                      </p>
+                      <p className="text-xs text-slate-600 mt-0.5">
+                        {med.frequency} · {med.duration}
+                      </p>
                     </div>
-                 </div>
-              )}
-
-              {activeTab === 'appointments' && (
-                 <div className="space-y-6">
-                    {appointments.map((apt, i) => (
-                       <div key={i} className="p-6 bg-slate-50 rounded-[2rem] border border-transparent hover:border-slate-100 hover:bg-white transition-all group">
-                          <div className="flex items-center justify-between">
-                             <div className="flex items-center gap-6">
-                                <div className="w-14 h-14 bg-white rounded-2xl shadow-sm flex items-center justify-center text-primary font-black group-hover:scale-110 transition-transform">
-                                   <Calendar className="w-6 h-6" />
-                                </div>
-                                <div>
-                                   <h4 className="text-sm font-black text-slate-900">{apt.reason || apt.type} Visit</h4>
-                                   <p className="text-[10px] font-bold text-slate-400 mt-1 uppercase tracking-widest">
-                                      {new Date(apt.dateTime).toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
-                                   </p>
-                                </div>
-                             </div>
-                             <div className="text-right">
-                                <p className="text-xs font-black text-slate-900">Dr. {apt.doctorId?.userId?.firstName} {apt.doctorId?.userId?.lastName}</p>
-                                <span className={`inline-block px-3 py-1 rounded-full text-[8px] font-black uppercase tracking-widest mt-2 ${
-                                   apt.status === 'COMPLETED' ? 'bg-green-100 text-green-600' : 'bg-amber-100 text-amber-600'
-                                }`}>
-                                   {apt.status}
-                                </span>
-                             </div>
-                          </div>
-                       </div>
-                    ))}
-                 </div>
-              )}
-
-              {activeTab === 'prescriptions' && (
-                 <div className="space-y-8">
-                    {prescriptions.map((pres, i) => (
-                       <div key={i} className="p-8 bg-slate-50 rounded-[2.5rem] border border-slate-100">
-                          <div className="flex items-center justify-between mb-8 pb-4 border-b border-slate-200/50">
-                             <div>
-                                <h4 className="text-lg font-black text-slate-900 tracking-tight">Prescription #{pres._id.slice(-6)}</h4>
-                                <p className="text-[10px] font-bold text-slate-400 mt-1 uppercase tracking-widest">Issued {new Date(pres.createdAt).toLocaleDateString()}</p>
-                             </div>
-                             <div className="flex items-center gap-2">
-                                <button className="p-2 hover:bg-primary-50 hover:text-primary rounded-lg transition-colors"><Eye className="w-5 h-5" /></button>
-                                <button className="p-2 hover:bg-primary-50 hover:text-primary rounded-lg transition-colors"><Download className="w-5 h-5" /></button>
-                             </div>
-                          </div>
-                          
-                          <div className="grid grid-cols-1 md:grid-cols-2 gap-x-12 gap-y-4">
-                             {pres.medications.map((med, j) => (
-                                <div key={j} className="flex items-center justify-between p-4 bg-white rounded-2xl shadow-sm">
-                                   <div>
-                                      <p className="font-black text-slate-900 text-sm mb-1">{med.name}</p>
-                                      <p className="text-[10px] font-bold text-slate-400 uppercase">{med.frequency} • {med.duration}</p>
-                                   </div>
-                                   <span className="px-3 py-1 bg-primary/10 text-primary text-[10px] font-black rounded-lg">
-                                      {med.dosage}
-                                   </span>
-                                </div>
-                             ))}
-                          </div>
-                       </div>
-                    ))}
-                 </div>
-              )}
-
-              {activeTab === 'billing' && (
-                 <div className="space-y-4">
-                    {bills.map((bill, i) => (
-                       <div key={i} className="flex items-center justify-between p-6 bg-white rounded-[2rem] border border-slate-100 shadow-sm hover:shadow-md transition-shadow group">
-                          <div className="flex items-center gap-6">
-                             <div className="w-14 h-14 bg-slate-50 rounded-2xl flex items-center justify-center text-slate-400 group-hover:text-primary transition-colors">
-                                <FileText className="w-6 h-6" />
-                             </div>
-                             <div>
-                                <h4 className="text-sm font-black text-slate-900">Medical Invoice #{bill._id.slice(-6)}</h4>
-                                <p className="text-[10px] font-bold text-slate-400 mt-1 uppercase tracking-widest">
-                                   Date: {new Date(bill.createdAt).toLocaleDateString()}
-                                </p>
-                             </div>
-                          </div>
-                          <div className="text-right">
-                             <p className="text-lg font-black text-slate-900">${bill.total}</p>
-                             <span className={`inline-block px-3 py-1 rounded-full text-[8px] font-black uppercase tracking-widest mt-2 ${
-                                bill.status === 'PAID' ? 'bg-green-100 text-green-600' : 'bg-rose-100 text-rose-600'
-                             }`}>
-                                {bill.status}
-                             </span>
-                          </div>
-                       </div>
-                    ))}
-                 </div>
-              )}
-
-           </div>
+                  ))}
+                </div>
+              </Card>
+            ))
+          )}
         </div>
-      </div>
+      )}
+
+      {/* Tab 4: Lab Reports */}
+      {activeTab === 'labs' && (
+        <div className="space-y-4">
+          {labOrders.length === 0 ? (
+            <Card>
+              <EmptyState
+                icon={FlaskConical}
+                title="No lab reports on file"
+                description="Diagnostic panels and verified laboratory reports for this patient will appear here."
+                action={
+                  canPrescribe && (
+                    <Link to="/dashboard/labs">
+                      <Button variant="primary" size="sm">
+                        <Plus className="w-4 h-4" />
+                        Open Laboratory Module
+                      </Button>
+                    </Link>
+                  )
+                }
+              />
+            </Card>
+          ) : (
+            labOrders.map((order) => (
+              <Card key={order._id} className="space-y-3">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2 border-b border-slate-100">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="font-mono text-xs font-semibold text-primary-800">
+                        {formatShortId(order._id, 'LAB-')}
+                      </span>
+                      <StatusBadge status={order.status} />
+                      <Badge tone="secondary">{order.category}</Badge>
+                    </div>
+                    <h3 className="text-base font-display font-bold text-slate-900 mt-1">{order.testName}</h3>
+                    <p className="text-xs text-slate-600">Ordered {formatDateTime(order.createdAt)}</p>
+                  </div>
+                  <Link to="/dashboard/labs" className="no-print">
+                    <Button variant="outline" size="sm">Open in Lab</Button>
+                  </Link>
+                </div>
+                {(order.results || []).length > 0 && (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
+                    {order.results.map((r, i) => (
+                      <div key={`${order._id}-${r.parameter}-${i}`} className="rounded-lg bg-slate-50 border border-slate-200 p-3 text-xs">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="font-semibold text-slate-900">{r.parameter}</span>
+                          <Badge tone={r.flag === 'NORMAL' ? 'success' : r.flag === 'CRITICAL' ? 'danger' : 'warning'}>
+                            {r.flag}
+                          </Badge>
+                        </div>
+                        <p className="font-mono text-sm font-bold text-slate-900 mt-1">
+                          {r.value} {r.unit}
+                        </p>
+                        {r.referenceRange && <p className="text-slate-600 mt-0.5">Ref: {r.referenceRange}</p>}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </Card>
+            ))
+          )}
+        </div>
+      )}
+
+      {/* Tab 5: Billing */}
+      {activeTab === 'billing' && canViewBilling && (
+        <Card padding="p-0">
+          {bills.length === 0 ? (
+            <EmptyState
+              icon={CreditCard}
+              title="No billing records"
+              description="Invoices generated for consultations, lab diagnostics, and pharmacy orders appear here."
+            />
+          ) : (
+            <div className="divide-y divide-slate-200">
+              {bills.map((bill) => (
+                <div key={bill._id} className="px-6 py-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div>
+                    <p className="text-xs font-mono font-semibold text-slate-700">
+                      {formatShortId(bill._id, 'INV-')}
+                    </p>
+                    <p className="text-sm font-semibold text-slate-900 mt-0.5">
+                      {bill.items?.[0]?.description || 'Clinical Services'}
+                    </p>
+                    <p className="text-xs text-slate-600 mt-0.5">Issued {formatDate(bill.createdAt)}</p>
+                  </div>
+                  <div className="flex items-center gap-3 shrink-0">
+                    <span className="text-base font-display font-bold text-slate-900 tabular-nums">
+                      {formatCurrency(bill.total)}
+                    </span>
+                    <StatusBadge status={bill.status} />
+                    <Link to={`/dashboard/billing/${bill._id}`} className="no-print">
+                      <Button variant="outline" size="sm">View Invoice</Button>
+                    </Link>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </Card>
+      )}
+
+      <PrintablePrescriptionModal
+        prescription={selectedRx}
+        open={Boolean(selectedRx)}
+        onClose={() => setSelectedRx(null)}
+      />
+
+      <Modal
+        open={vitalsModalOpen}
+        onClose={() => setVitalsModalOpen(false)}
+        title="Record Clinical Vitals"
+        subtitle={`Logged to longitudinal vitals history for ${patient.userId?.firstName} ${patient.userId?.lastName}`}
+      >
+        <form onSubmit={handleSaveVitals} className="space-y-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <Input
+              label="Blood Pressure (mmHg)"
+              value={vitalsForm.bloodPressure}
+              onChange={(e) => setVitalsForm({ ...vitalsForm, bloodPressure: e.target.value })}
+              placeholder="120/80"
+            />
+            <Input
+              label="Heart Rate (bpm)"
+              type="number"
+              min="20"
+              max="260"
+              value={vitalsForm.heartRate}
+              onChange={(e) => setVitalsForm({ ...vitalsForm, heartRate: e.target.value })}
+              placeholder="72"
+            />
+            <Input
+              label="Temperature (°F)"
+              type="number"
+              step="0.1"
+              min="90"
+              max="115"
+              value={vitalsForm.temperature}
+              onChange={(e) => setVitalsForm({ ...vitalsForm, temperature: e.target.value })}
+              placeholder="98.6"
+            />
+            <Input
+              label="Oxygen Saturation SpO2 (%)"
+              type="number"
+              min="50"
+              max="100"
+              value={vitalsForm.oxygenSaturation}
+              onChange={(e) => setVitalsForm({ ...vitalsForm, oxygenSaturation: e.target.value })}
+              placeholder="99"
+            />
+            <Input
+              label="Weight (kg)"
+              type="number"
+              step="0.1"
+              min="1"
+              max="500"
+              value={vitalsForm.weight}
+              onChange={(e) => setVitalsForm({ ...vitalsForm, weight: e.target.value })}
+              placeholder="70.0"
+            />
+          </div>
+          <div className="flex justify-end gap-2.5 pt-2">
+            <Button variant="outline" onClick={() => setVitalsModalOpen(false)}>
+              Cancel
+            </Button>
+            <Button type="submit" variant="primary" loading={savingVitals}>
+              Log Vitals Reading
+            </Button>
+          </div>
+        </form>
+      </Modal>
     </div>
   );
 }

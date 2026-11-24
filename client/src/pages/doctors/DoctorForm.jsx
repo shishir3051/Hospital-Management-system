@@ -1,91 +1,260 @@
-// Doctor Form Page - Create/Edit Doctor
 import { useState, useEffect } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useParams, useNavigate, Link } from 'react-router-dom';
 import { doctorsApi } from '../../services/api';
+import {
+  PageHeader,
+  Card,
+  Button,
+  Input,
+  Select,
+  Textarea,
+  LoadingSpinner,
+  ErrorAlert,
+  useToast
+} from '../../components/ui';
+import { DEPARTMENTS } from '../../config/site';
 import { ArrowLeft, Save } from 'lucide-react';
 
 export default function DoctorForm() {
   const { id } = useParams();
-  const navigate = useNavigate();
   const isEdit = Boolean(id);
+  const navigate = useNavigate();
+  const toast = useToast();
 
-  const [formData, setFormData] = useState({
-    firstName: '', lastName: '', email: '', phone: '',
-    specialization: '', education: '', yearsOfExperience: '', consultationFee: ''
-  });
-  const [loading, setLoading] = useState(false);
+  const [initialLoading, setInitialLoading] = useState(isEdit);
+  const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
 
-  useEffect(() => {
-    if (isEdit) loadDoctor();
-  }, [id]);
+  const [formData, setFormData] = useState({
+    firstName: '',
+    lastName: '',
+    email: '',
+    phone: '',
+    password: '',
+    department: DEPARTMENTS[0],
+    specialization: '',
+    licenseNumber: '',
+    education: '',
+    yearsOfExperience: 5,
+    consultationFee: 175,
+    status: 'AVAILABLE',
+    bio: ''
+  });
 
-  const loadDoctor = async () => {
-    try {
-      const doctor = await doctorsApi.getById(id);
-      setFormData({
-        firstName: doctor.user?.firstName || '',
-        lastName: doctor.user?.lastName || '',
-        email: doctor.user?.email || '',
-        phone: doctor.user?.phone || '',
-        specialization: doctor.specialization || '',
-        education: doctor.education || '',
-        yearsOfExperience: doctor.yearsOfExperience || '',
-        consultationFee: doctor.consultationFee || ''
-      });
-    } catch (err) { setError('Failed to load doctor'); }
-  };
+  useEffect(() => {
+    if (!isEdit) return;
+    setInitialLoading(true);
+    doctorsApi
+      .getById(id)
+      .then((d) => {
+        setFormData({
+          firstName: d.userId?.firstName || '',
+          lastName: d.userId?.lastName || '',
+          email: d.userId?.email || '',
+          phone: d.userId?.phone || '',
+          password: '',
+          department: d.department || DEPARTMENTS[0],
+          specialization: d.specialization || '',
+          licenseNumber: d.licenseNumber || '',
+          education: d.education || '',
+          yearsOfExperience: d.yearsOfExperience ?? 0,
+          consultationFee: d.consultationFee ?? 0,
+          status: d.status || 'AVAILABLE',
+          bio: d.bio || ''
+        });
+      })
+      .catch((err) => setError(err.message || 'Unable to load doctor profile'))
+      .finally(() => setInitialLoading(false));
+  }, [id, isEdit]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
-    setLoading(true);
+    setSubmitting(true);
     try {
-      if (isEdit) await doctorsApi.update(id, formData);
-      else await doctorsApi.create(formData);
-      navigate('/doctors');
-    } catch (err) { setError(err.message); }
-    finally { setLoading(false); }
+      const payload = {
+        firstName: formData.firstName.trim(),
+        lastName: formData.lastName.trim(),
+        phone: formData.phone.trim(),
+        department: formData.department,
+        specialization: formData.specialization.trim(),
+        licenseNumber: formData.licenseNumber.trim(),
+        education: formData.education.trim(),
+        yearsOfExperience: Number(formData.yearsOfExperience),
+        consultationFee: Number(formData.consultationFee),
+        status: formData.status,
+        bio: formData.bio.trim()
+      };
+
+      if (!isEdit) {
+        payload.email = formData.email.trim();
+        if (formData.password.trim()) payload.password = formData.password.trim();
+      }
+
+      if (isEdit) {
+        await doctorsApi.update(id, payload);
+        toast.success('Physician profile updated.');
+        navigate(`/dashboard/doctors/${id}`);
+      } else {
+        const res = await doctorsApi.create(payload);
+        toast.success('Physician onboarded successfully.');
+        navigate(`/dashboard/doctors/${res.doctor?._id || ''}`);
+      }
+    } catch (err) {
+      setError(err.message || 'Failed to save physician profile');
+    } finally {
+      setSubmitting(false);
+    }
   };
 
-  const specializations = ['CARDIOLOGY', 'DERMATOLOGY', 'ORTHOPEDICS', 'NEUROLOGY', 'PEDIATRICS', 'GENERAL'];
+  if (initialLoading) return <LoadingSpinner label="Loading physician profile..." />;
+
+  const backPath = isEdit ? `/dashboard/doctors/${id}` : '/dashboard/doctors';
 
   return (
-    <div className="max-w-2xl mx-auto space-y-6 animate-fadeIn">
-      <div className="flex items-center gap-4">
-        <button onClick={() => navigate('/doctors')} className="p-2 hover:bg-gray-100 rounded-lg"><ArrowLeft className="w-5 h-5" /></button>
-        <h1 className="text-2xl font-bold text-gray-900">{isEdit ? 'Edit Doctor' : 'Add New Doctor'}</h1>
-      </div>
+    <div className="max-w-3xl mx-auto space-y-6 animate-fadeIn">
+      <PageHeader
+        breadcrumb={
+          <Link
+            to={backPath}
+            className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-600 hover:text-primary-700"
+          >
+            <ArrowLeft className="w-3.5 h-3.5" aria-hidden="true" />
+            Back
+          </Link>
+        }
+        title={isEdit ? 'Edit Physician Profile' : 'Onboard New Physician'}
+        subtitle="Maintain accurate department assignment, board credentials, and USD consultation fees."
+      />
 
-      {error && <div className="p-4 bg-red-50 border border-red-200 rounded-lg text-red-600">{error}</div>}
+      {error && <ErrorAlert message={error} />}
 
-      <form onSubmit={handleSubmit} className="bg-white rounded-xl shadow-card p-6 space-y-6">
-        <div className="grid grid-cols-2 gap-6">
-          <div><label className="block text-sm font-medium mb-2">First Name *</label>
-            <input type="text" value={formData.firstName} onChange={(e) => setFormData({...formData, firstName: e.target.value})} required className="w-full px-4 py-2.5 border rounded-lg focus:ring-2 focus:ring-primary/20" /></div>
-          <div><label className="block text-sm font-medium mb-2">Last Name *</label>
-            <input type="text" value={formData.lastName} onChange={(e) => setFormData({...formData, lastName: e.target.value})} required className="w-full px-4 py-2.5 border rounded-lg focus:ring-2 focus:ring-primary/20" /></div>
-          <div><label className="block text-sm font-medium mb-2">Email *</label>
-            <input type="email" value={formData.email} onChange={(e) => setFormData({...formData, email: e.target.value})} required className="w-full px-4 py-2.5 border rounded-lg focus:ring-2 focus:ring-primary/20" /></div>
-          <div><label className="block text-sm font-medium mb-2">Phone</label>
-            <input type="tel" value={formData.phone} onChange={(e) => setFormData({...formData, phone: e.target.value})} className="w-full px-4 py-2.5 border rounded-lg focus:ring-2 focus:ring-primary/20" /></div>
-          <div><label className="block text-sm font-medium mb-2">Specialization *</label>
-            <select value={formData.specialization} onChange={(e) => setFormData({...formData, specialization: e.target.value})} required className="w-full px-4 py-2.5 border rounded-lg focus:ring-2 focus:ring-primary/20">
-              <option value="">Select</option>
-              {specializations.map(s => <option key={s} value={s}>{s}</option>)}
-            </select></div>
-          <div><label className="block text-sm font-medium mb-2">Years of Experience</label>
-            <input type="number" value={formData.yearsOfExperience} onChange={(e) => setFormData({...formData, yearsOfExperience: e.target.value})} className="w-full px-4 py-2.5 border rounded-lg focus:ring-2 focus:ring-primary/20" /></div>
-          <div><label className="block text-sm font-medium mb-2">Consultation Fee ($)</label>
-            <input type="number" value={formData.consultationFee} onChange={(e) => setFormData({...formData, consultationFee: e.target.value})} className="w-full px-4 py-2.5 border rounded-lg focus:ring-2 focus:ring-primary/20" /></div>
-          <div className="col-span-2"><label className="block text-sm font-medium mb-2">Education</label>
-            <input type="text" value={formData.education} onChange={(e) => setFormData({...formData, education: e.target.value})} placeholder="e.g., MD from Harvard Medical School" className="w-full px-4 py-2.5 border rounded-lg focus:ring-2 focus:ring-primary/20" /></div>
-        </div>
-        <div className="flex justify-end gap-4">
-          <button type="button" onClick={() => navigate('/doctors')} className="px-6 py-2.5 border rounded-lg hover:bg-gray-50">Cancel</button>
-          <button type="submit" disabled={loading} className="px-6 py-2.5 bg-primary text-white rounded-lg hover:bg-primary-dark disabled:opacity-50 flex items-center gap-2">
-            <Save className="w-5 h-5" /> {loading ? 'Saving...' : 'Save Doctor'}
-          </button>
+      <form onSubmit={handleSubmit} className="space-y-6">
+        <Card className="space-y-4">
+          <h2 className="text-base font-display font-bold text-slate-900">Account &amp; Contact</h2>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <Input
+              label="First Name"
+              value={formData.firstName}
+              onChange={(e) => setFormData({ ...formData, firstName: e.target.value })}
+              required
+            />
+            <Input
+              label="Last Name"
+              value={formData.lastName}
+              onChange={(e) => setFormData({ ...formData, lastName: e.target.value })}
+              required
+            />
+            <Input
+              label="Email Address"
+              type="email"
+              value={formData.email}
+              onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+              disabled={isEdit}
+              required={!isEdit}
+            />
+            <Input
+              label="Phone Number"
+              type="tel"
+              value={formData.phone}
+              onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+              placeholder="+1 (555) 201-0200"
+            />
+            {!isEdit && (
+              <Input
+                label="Initial Password (Optional)"
+                type="password"
+                value={formData.password}
+                onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                placeholder="Leave blank to auto-generate"
+                className="sm:col-span-2"
+              />
+            )}
+          </div>
+        </Card>
+
+        <Card className="space-y-4">
+          <h2 className="text-base font-display font-bold text-slate-900">Clinical Credentials</h2>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <Select
+              label="Clinical Department"
+              value={formData.department}
+              onChange={(e) => setFormData({ ...formData, department: e.target.value })}
+              required
+            >
+              {DEPARTMENTS.map((dept) => (
+                <option key={dept} value={dept}>
+                  {dept}
+                </option>
+              ))}
+            </Select>
+            <Input
+              label="Specialization"
+              value={formData.specialization}
+              onChange={(e) => setFormData({ ...formData, specialization: e.target.value })}
+              placeholder="e.g. Interventional Cardiology"
+              required
+            />
+            <Input
+              label="Medical License Number"
+              value={formData.licenseNumber}
+              onChange={(e) => setFormData({ ...formData, licenseNumber: e.target.value })}
+              placeholder="e.g. MC-CARD-2040"
+              required
+            />
+            <Select
+              label="Availability Status"
+              value={formData.status}
+              onChange={(e) => setFormData({ ...formData, status: e.target.value })}
+            >
+              <option value="AVAILABLE">Available</option>
+              <option value="BUSY">Busy</option>
+              <option value="ON_LEAVE">On Leave</option>
+            </Select>
+            <Input
+              label="Years of Experience"
+              type="number"
+              min="0"
+              max="80"
+              value={formData.yearsOfExperience}
+              onChange={(e) => setFormData({ ...formData, yearsOfExperience: e.target.value })}
+              required
+            />
+            <Input
+              label="Consultation Fee (USD $)"
+              type="number"
+              min="0"
+              step="0.01"
+              value={formData.consultationFee}
+              onChange={(e) => setFormData({ ...formData, consultationFee: e.target.value })}
+              required
+            />
+            <Input
+              label="Education & Board Certifications"
+              value={formData.education}
+              onChange={(e) => setFormData({ ...formData, education: e.target.value })}
+              placeholder="e.g. MD, Johns Hopkins University; FACC"
+              className="sm:col-span-2"
+              required
+            />
+          </div>
+          <Textarea
+            label="Clinical Biography"
+            rows={4}
+            value={formData.bio}
+            onChange={(e) => setFormData({ ...formData, bio: e.target.value })}
+            placeholder="Summarize clinical focus areas, fellowships, and patient care philosophy..."
+          />
+        </Card>
+
+        <div className="flex items-center justify-end gap-3">
+          <Button variant="outline" onClick={() => navigate(backPath)}>
+            Cancel
+          </Button>
+          <Button type="submit" variant="primary" loading={submitting}>
+            <Save className="w-4 h-4" />
+            {isEdit ? 'Save Profile' : 'Onboard Physician'}
+          </Button>
         </div>
       </form>
     </div>

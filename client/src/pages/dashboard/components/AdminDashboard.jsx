@@ -1,226 +1,332 @@
-// Admin Dashboard Overview
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
-import { useAuth } from '../../../store/AuthContext';
 import { dashboardApi } from '../../../services/api';
+import {
+  Card,
+  StatCard,
+  PageHeader,
+  Button,
+  Select,
+  StatusBadge,
+  LoadingSpinner,
+  ErrorAlert
+} from '../../../components/ui';
+import { formatCurrency, formatDateTime } from '../../../config/site';
 import {
   Users,
   Stethoscope,
   Calendar,
   DollarSign,
-  TrendingUp,
-  Activity,
-  CheckCircle,
-  Clock,
+  Plus,
+  FileText,
+  ShieldAlert,
   ArrowRight,
-  ShieldAlert
+  Clock
 } from 'lucide-react';
 import {
   Chart as ChartJS,
   CategoryScale,
   LinearScale,
-  PointElement,
-  LineElement,
   BarElement,
   ArcElement,
   Title,
   Tooltip,
-  Legend,
-  Filler
+  Legend
 } from 'chart.js';
-import { Line, Doughnut } from 'react-chartjs-2';
+import { Bar, Doughnut } from 'react-chartjs-2';
 
-ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, BarElement, ArcElement, Title, Tooltip, Legend, Filler);
+ChartJS.register(CategoryScale, LinearScale, BarElement, ArcElement, Title, Tooltip, Legend);
 
 export default function AdminDashboard() {
-  const { user } = useAuth();
   const [stats, setStats] = useState(null);
   const [charts, setCharts] = useState(null);
+  const [period, setPeriod] = useState('6months');
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
 
-  useEffect(() => {
-    loadDashboardData();
-  }, []);
-
-  const loadDashboardData = async () => {
+  const loadData = useCallback(async () => {
     try {
-      const [statsData, chartsData] = await Promise.all([
+      setLoading(true);
+      setError('');
+      const [statsRes, chartsRes] = await Promise.all([
         dashboardApi.getStats(),
-        dashboardApi.getCharts()
+        dashboardApi.getCharts(period)
       ]);
-      setStats(statsData);
-      setCharts(chartsData);
-    } catch (error) {
-      console.error('Failed to load dashboard:', error);
+      setStats(statsRes);
+      setCharts(chartsRes);
+    } catch (err) {
+      setError(err.message || 'Failed to load executive dashboard data');
     } finally {
       setLoading(false);
     }
+  }, [period]);
+
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
+
+  if (loading && !stats) return <LoadingSpinner label="Loading hospital operations overview..." />;
+
+  const revenueChartData = {
+    labels: (charts?.revenueByMonth || []).map((m) => m.month),
+    datasets: [
+      {
+        label: 'Settled Revenue ($)',
+        data: (charts?.revenueByMonth || []).map((m) => m.revenue),
+        backgroundColor: '#0F766E',
+        borderRadius: 6,
+        maxBarThickness: 36
+      }
+    ]
   };
 
-  if (loading) return (
-    <div className="p-8 flex flex-col items-center justify-center animate-pulse">
-      <div className="w-16 h-16 border-4 border-primary border-t-transparent rounded-full animate-spin mb-4"></div>
-      <p className="text-slate-500 font-bold uppercase tracking-widest text-xs">Loading admin insights...</p>
-    </div>
-  );
-
-  const statCards = [
-    { title: 'Registered Patients', value: stats?.totalPatients || 0, icon: Users, color: 'text-primary', bg: 'bg-primary-50' },
-    { title: 'Total Doctors', value: stats?.totalDoctors || 0, icon: Stethoscope, color: 'text-secondary', bg: 'bg-secondary-50' },
-    { title: "Today's Appointments", value: stats?.todayAppointments || 0, icon: Calendar, color: 'text-amber-500', bg: 'bg-amber-50' },
-    { title: 'Month Revenue', value: `৳${(stats?.monthRevenue || 0).toLocaleString()}`, icon: DollarSign, color: 'text-green-500', bg: 'bg-green-50' }
+  const statusObj = charts?.statusCounts || {};
+  const statusEntries = [
+    { label: 'Scheduled', val: statusObj.SCHEDULED || 0, color: '#D97706' },
+    { label: 'Confirmed', val: statusObj.CONFIRMED || 0, color: '#0284C7' },
+    { label: 'In Progress', val: statusObj.IN_PROGRESS || 0, color: '#4F46E5' },
+    { label: 'Completed', val: statusObj.COMPLETED || 0, color: '#059669' },
+    { label: 'Cancelled', val: statusObj.CANCELLED || 0, color: '#E11D48' },
+    { label: 'No Show', val: statusObj.NO_SHOW || 0, color: '#64748B' }
   ];
+  const totalStatusCount = statusEntries.reduce((sum, s) => sum + s.val, 0);
+
+  const statusChartData = {
+    labels: statusEntries.map((s) => s.label),
+    datasets: [
+      {
+        data: statusEntries.map((s) => s.val),
+        backgroundColor: statusEntries.map((s) => s.color),
+        borderWidth: 2,
+        borderColor: '#FFFFFF'
+      }
+    ]
+  };
 
   return (
-    <div className="space-y-8 animate-fadeIn">
-      {/* Welcome Header */}
-      <div className="bg-white rounded-[2rem] p-8 shadow-card border border-slate-100 flex flex-col md:flex-row items-center justify-between gap-6 overflow-hidden relative">
-         <div className="absolute top-0 right-0 w-64 h-64 bg-primary-50/50 rounded-full translate-x-1/2 -translate-y-1/2 blur-3xl"></div>
-         <div className="relative z-10">
-            <h1 className="text-3xl font-black text-slate-900 tracking-tight">System Administration</h1>
-            <p className="text-slate-500 font-medium mt-1">Full control over hospital operations and medical records.</p>
-         </div>
-         <div className="flex items-center gap-4 relative z-10">
-            <div className="text-right hidden sm:block">
-               <p className="text-sm font-black text-slate-900">{user?.firstName} {user?.lastName}</p>
-               <p className="text-[10px] uppercase font-black text-primary tracking-widest">Administrator</p>
-            </div>
-            <div className="w-14 h-14 bg-primary text-white rounded-2xl flex items-center justify-center shadow-lg shadow-primary/20">
-               <ShieldAlert className="w-6 h-6" />
-            </div>
-         </div>
+    <div className="space-y-6 animate-fadeIn">
+      <PageHeader
+        title="Hospital Operations Overview"
+        subtitle="Real-time clinical volume, specialist availability, and financial performance."
+        actions={
+          <>
+            <Link to="/dashboard/billing/new">
+              <Button variant="outline" size="sm">
+                <FileText className="w-4 h-4" aria-hidden="true" />
+                New Invoice
+              </Button>
+            </Link>
+            <Link to="/dashboard/appointments/new">
+              <Button variant="primary" size="sm">
+                <Plus className="w-4 h-4" aria-hidden="true" />
+                Book Appointment
+              </Button>
+            </Link>
+          </>
+        }
+      />
+
+      {error && <ErrorAlert message={error} onRetry={loadData} />}
+
+      {/* KPI Cards */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <StatCard
+          label="Active Patients"
+          value={(stats?.totalPatients ?? 0).toLocaleString()}
+          subtitle="Registered EHR profiles"
+          icon={Users}
+          tone="primary"
+        />
+        <StatCard
+          label="Medical Staff"
+          value={`${stats?.availableDoctors ?? 0} / ${stats?.totalDoctors ?? 0}`}
+          subtitle="Available specialists on roster"
+          icon={Stethoscope}
+          tone="secondary"
+        />
+        <StatCard
+          label="Today's Visits"
+          value={(stats?.todayAppointments ?? 0).toLocaleString()}
+          subtitle={`${stats?.scheduledAppointments ?? 0} total upcoming`}
+          icon={Calendar}
+          tone="warning"
+        />
+        <StatCard
+          label="Monthly Revenue"
+          value={formatCurrency(stats?.monthRevenue ?? 0)}
+          subtitle={`Outstanding: ${formatCurrency(stats?.pendingAmount ?? 0)}`}
+          icon={DollarSign}
+          tone="success"
+        />
       </div>
 
-      {/* Stats Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        {statCards.map((stat, i) => (
-          <div key={i} className="bg-white rounded-3xl p-6 shadow-card hover:shadow-elevated transition-all border border-slate-100 group">
-             <div className="flex items-center gap-4 mb-4">
-                <div className={`w-12 h-12 ${stat.bg} ${stat.color} rounded-2xl flex items-center justify-center group-hover:scale-110 transition-transform`}>
-                   <stat.icon className="w-6 h-6" />
-                </div>
-                <div>
-                   <p className="text-[10px] font-black uppercase text-slate-400 tracking-widest">{stat.title}</p>
-                   <p className="text-2xl font-black text-slate-900">{stat.value}</p>
-                </div>
-             </div>
-             <div className="flex items-center gap-1.5 text-green-500 font-bold text-xs bg-green-50/50 px-3 py-1.5 rounded-full w-fit">
-                <TrendingUp className="w-3.5 h-3.5" />
-                +12% this month
-             </div>
+      {/* Analytics Row */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+        <Card className="lg:col-span-8">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-5">
+            <div>
+              <h2 className="text-base font-display font-bold text-slate-900">Settled Revenue Trend</h2>
+              <p className="text-xs text-slate-600">Aggregated paid invoices across selected timeframe</p>
+            </div>
+            <Select
+              aria-label="Select revenue timeframe"
+              value={period}
+              onChange={(e) => setPeriod(e.target.value)}
+              className="w-44"
+            >
+              <option value="month">Current Month</option>
+              <option value="6months">Last 6 Months</option>
+              <option value="year">Last 12 Months</option>
+            </Select>
           </div>
-        ))}
+          <div className="h-72">
+            <Bar
+              data={revenueChartData}
+              options={{
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                  legend: { display: false }
+                },
+                scales: {
+                  y: {
+                    beginAtZero: true,
+                    ticks: {
+                      callback: (v) => `$${Number(v).toLocaleString()}`
+                    },
+                    grid: { color: '#F1F5F9' }
+                  },
+                  x: { grid: { display: false } }
+                }
+              }}
+            />
+          </div>
+        </Card>
+
+        <Card className="lg:col-span-4 flex flex-col justify-between">
+          <div>
+            <h2 className="text-base font-display font-bold text-slate-900">Appointment Status Mix</h2>
+            <p className="text-xs text-slate-600 mb-4">Distribution across all clinical visits</p>
+          </div>
+          {totalStatusCount === 0 ? (
+            <div className="py-16 text-center text-sm text-slate-500">
+              No appointment data recorded yet.
+            </div>
+          ) : (
+            <div className="h-64 flex items-center justify-center">
+              <Doughnut
+                data={statusChartData}
+                options={{
+                  responsive: true,
+                  maintainAspectRatio: false,
+                  cutout: '62%',
+                  plugins: {
+                    legend: {
+                      position: 'bottom',
+                      labels: { boxWidth: 10, padding: 12, font: { size: 11 } }
+                    }
+                  }
+                }}
+              />
+            </div>
+          )}
+        </Card>
       </div>
 
-      {/* Charts & Activities */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        <div className="lg:col-span-2 space-y-8">
-           {/* Revenue Chart */}
-           <div className="bg-white rounded-[2.5rem] p-8 shadow-card border border-slate-100">
-              <div className="flex items-center justify-between mb-8">
-                 <h3 className="text-xl font-black text-slate-900">Financial Growth</h3>
-                 <select className="bg-slate-50 border-0 text-[10px] font-black uppercase tracking-widest px-4 py-2 rounded-xl focus:ring-2 focus:ring-primary/20 cursor-pointer">
-                    <option>Last 6 Months</option>
-                    <option>Year Target</option>
-                 </select>
-              </div>
-              <div className="h-72">
-                 <Line 
-                    data={{
-                       labels: charts?.revenueByMonth?.map(m => m.month) || [],
-                       datasets: [{
-                          label: 'Revenue (৳)',
-                          data: charts?.revenueByMonth?.map(m => m.revenue) || [],
-                          borderColor: '#0D9488',
-                          backgroundColor: 'rgba(13, 148, 136, 0.05)',
-                          fill: true,
-                          tension: 0.4,
-                          pointRadius: 6,
-                          pointBackgroundColor: '#fff',
-                          pointBorderColor: '#0D9488',
-                          pointBorderWidth: 2
-                       }]
-                    }}
-                    options={{ responsive: true, maintainAspectRatio: false }}
-                 />
-              </div>
-           </div>
+      {/* Quick Actions + Recent Appointments + Top Doctors */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+        <Card className="lg:col-span-7" padding="p-0">
+          <div className="px-6 py-4 border-b border-slate-200 flex items-center justify-between">
+            <h2 className="text-base font-display font-bold text-slate-900">Recent Appointments</h2>
+            <Link
+              to="/dashboard/appointments"
+              className="text-xs font-semibold text-primary-700 hover:underline inline-flex items-center gap-1"
+            >
+              View all <ArrowRight className="w-3.5 h-3.5" />
+            </Link>
+          </div>
+          <div className="divide-y divide-slate-100">
+            {(stats?.recentAppointments || []).length === 0 ? (
+              <p className="px-6 py-10 text-center text-sm text-slate-500">No appointments yet.</p>
+            ) : (
+              stats.recentAppointments.map((apt) => (
+                <Link
+                  key={apt._id}
+                  to={`/dashboard/appointments/${apt._id}`}
+                  className="px-6 py-3.5 flex items-center justify-between gap-4 hover:bg-slate-50 transition-colors"
+                >
+                  <div className="min-w-0">
+                    <p className="text-sm font-semibold text-slate-900 truncate">
+                      {apt.patientName} <span className="text-slate-400 font-normal">with</span> {apt.doctorName}
+                    </p>
+                    <p className="text-xs text-slate-600 mt-0.5 flex items-center gap-1.5">
+                      <Clock className="w-3.5 h-3.5 text-slate-400" aria-hidden="true" />
+                      {formatDateTime(apt.dateTime)}
+                    </p>
+                  </div>
+                  <StatusBadge status={apt.status} />
+                </Link>
+              ))
+            )}
+          </div>
+        </Card>
 
-           {/* Quick Action Hub */}
-           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              <Link to="/dashboard/patients/new" className="bg-primary p-6 rounded-[2rem] text-white shadow-lg shadow-primary/20 hover:scale-105 active:scale-95 transition-all text-center">
-                 <Users className="w-6 h-6 mx-auto mb-3" />
-                 <p className="text-[10px] font-black uppercase tracking-tighter">Add Patient</p>
+        <div className="lg:col-span-5 space-y-6">
+          <Card>
+            <h2 className="text-base font-display font-bold text-slate-900 mb-3">Quick Administration</h2>
+            <div className="grid grid-cols-2 gap-2.5">
+              <Link to="/dashboard/patients/new">
+                <Button variant="outline" size="sm" className="w-full justify-start">
+                  <Users className="w-4 h-4 text-primary-700" />
+                  Register Patient
+                </Button>
               </Link>
-              <Link to="/dashboard/doctors/new" className="bg-secondary p-6 rounded-[2rem] text-white shadow-lg shadow-secondary/20 hover:scale-105 active:scale-95 transition-all text-center">
-                 <Stethoscope className="w-6 h-6 mx-auto mb-3" />
-                 <p className="text-[10px] font-black uppercase tracking-tighter">Onboard Doctor</p>
+              <Link to="/dashboard/doctors/new">
+                <Button variant="outline" size="sm" className="w-full justify-start">
+                  <Stethoscope className="w-4 h-4 text-secondary-800" />
+                  Onboard Doctor
+                </Button>
               </Link>
-              <Link to="/dashboard/appointments/new" className="bg-amber-500 p-6 rounded-[2rem] text-white shadow-lg shadow-amber-500/20 hover:scale-105 active:scale-95 transition-all text-center">
-                 <Calendar className="w-6 h-6 mx-auto mb-3" />
-                 <p className="text-[10px] font-black uppercase tracking-tighter">Set Meeting</p>
+              <Link to="/dashboard/billing">
+                <Button variant="outline" size="sm" className="w-full justify-start">
+                  <DollarSign className="w-4 h-4 text-emerald-700" />
+                  Billing Ledger
+                </Button>
               </Link>
-              <Link to="/dashboard/billing" className="bg-slate-900 p-6 rounded-[2rem] text-white shadow-lg shadow-slate-900/20 hover:scale-105 active:scale-95 transition-all text-center">
-                 <DollarSign className="w-6 h-6 mx-auto mb-3" />
-                 <p className="text-[10px] font-black uppercase tracking-tighter">Audit Logs</p>
+              <Link to="/dashboard/audit-logs">
+                <Button variant="outline" size="sm" className="w-full justify-start">
+                  <ShieldAlert className="w-4 h-4 text-amber-700" />
+                  Audit &amp; Inquiries
+                  {stats?.openInquiries > 0 && (
+                    <span className="ml-auto px-1.5 py-0.5 text-[11px] rounded bg-amber-100 text-amber-900">
+                      {stats.openInquiries}
+                    </span>
+                  )}
+                </Button>
               </Link>
-           </div>
-        </div>
+            </div>
+          </Card>
 
-        <div className="space-y-8">
-           {/* Appointment Status */}
-           <div className="bg-white rounded-[2.5rem] p-8 shadow-card border border-slate-100">
-              <h3 className="text-xl font-black text-slate-900 mb-6">Booking Status</h3>
-              <div className="h-56 relative flex items-center justify-center">
-                 <Doughnut 
-                    data={{
-                       labels: ['Pending', 'Completed', 'Cancelled'],
-                       datasets: [{
-                          data: charts?.statusCounts ? [
-                             (charts.statusCounts.SCHEDULED || 0) + (charts.statusCounts.CONFIRMED || 0),
-                             charts.statusCounts.COMPLETED || 0,
-                             charts.statusCounts.CANCELLED || 0
-                          ] : [60, 30, 10],
-                          backgroundColor: ['#0D9488', '#3B82F6', '#EF4444'],
-                          borderWidth: 0,
-                          hoverOffset: 20
-                       }]
-                    }}
-                    options={{ cutout: '75%', plugins: { legend: { position: 'bottom', labels: { usePointStyle: true, padding: 20, font: { weight: 'bold', size: 10 } } } } }}
-                 />
-                 <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-                    <p className="text-2xl font-black text-slate-900">{stats?.totalAppointments || 0}</p>
-                    <p className="text-[8px] font-black uppercase text-slate-400">Total Visits</p>
-                 </div>
-              </div>
-           </div>
-
-           {/* Recent Staff Activity */}
-           <div className="bg-white rounded-[2.5rem] p-8 shadow-card border border-slate-100">
-              <div className="flex items-center justify-between mb-6">
-                 <h3 className="text-xl font-black text-slate-900">Recent Visits</h3>
-                 <Link to="/dashboard/appointments" className="text-primary hover:underline"><ArrowRight className="w-4 h-4" /></Link>
-              </div>
-              <div className="space-y-4">
-                 {stats?.recentAppointments?.slice(0, 4).map((apt, i) => (
-                    <div key={i} className="flex items-center gap-4 p-4 hover:bg-slate-50 rounded-2xl transition-colors border border-transparent hover:border-slate-100">
-                       <div className="w-10 h-10 bg-slate-100 rounded-xl flex items-center justify-center text-slate-400 group-hover:text-primary transition-colors">
-                          <Activity className="w-5 h-5" />
-                       </div>
-                       <div className="flex-grow min-w-0">
-                          <p className="text-xs font-black text-slate-900 truncate">{apt.patientName}</p>
-                          <p className="text-[10px] text-slate-500 font-bold">{apt.doctorName}</p>
-                       </div>
-                       <div className={`px-2 py-1 rounded-md text-[8px] font-black uppercase tracking-widest ${
-                          apt.status === 'COMPLETED' ? 'bg-green-100 text-green-600' : 
-                          apt.status === 'CANCELLED' ? 'bg-red-100 text-red-600' : 'bg-amber-100 text-amber-600'
-                       }`}>
-                          {apt.status}
-                       </div>
+          <Card>
+            <h2 className="text-base font-display font-bold text-slate-900 mb-3">Top Active Physicians</h2>
+            {(charts?.topDoctors || []).length === 0 ? (
+              <p className="text-sm text-slate-500">No physician volume data yet.</p>
+            ) : (
+              <ul className="space-y-3">
+                {charts.topDoctors.map((doc) => (
+                  <li key={doc.doctorId} className="flex items-center justify-between gap-3 text-sm">
+                    <div className="min-w-0">
+                      <p className="font-semibold text-slate-900 truncate">{doc.name}</p>
+                      <p className="text-xs text-slate-600 truncate">{doc.department}</p>
                     </div>
-                 ))}
-              </div>
-           </div>
+                    <span className="px-2.5 py-1 rounded-md bg-primary-50 text-primary-800 text-xs font-semibold tabular-nums shrink-0">
+                      {doc.appointments} visits
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </Card>
         </div>
       </div>
     </div>
