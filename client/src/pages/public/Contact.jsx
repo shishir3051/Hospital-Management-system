@@ -1,166 +1,202 @@
-import { Phone, Mail, MapPin, Clock, Facebook, Twitter, Instagram, Linkedin, Send } from 'lucide-react';
 import { useState } from 'react';
+import { contactApi } from '../../services/api';
+import { Button, Card, Input, Textarea, ErrorAlert, useToast } from '../../components/ui';
+import { SITE } from '../../config/site';
+import { MapPin, Phone, Mail, Clock, Send, CheckCircle2 } from 'lucide-react';
 
 export default function Contact() {
-  const [formData, setFormData] = useState({ name: '', email: '', subject: '', message: '' });
+  const toast = useToast();
+  const [formData, setFormData] = useState({
+    name: '',
+    email: '',
+    phone: '',
+    subject: '',
+    message: ''
+  });
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [submitted, setSubmitted] = useState(false);
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    alert('Thank you for contacting HealthCore. We will get back to you soon!');
+    setError('');
+    setLoading(true);
+    try {
+      const res = await contactApi.submit(formData);
+      toast.success(res.message || 'Message sent successfully!');
+      setSubmitted(true);
+      setFormData({ name: '', email: '', phone: '', subject: '', message: '' });
+    } catch (err) {
+      setError(err.message || 'Failed to submit inquiry. Please try again.');
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
     <div className="animate-fadeIn">
-      {/* Hero Section */}
-      <section className="py-24 bg-slate-50">
-        <div className="container mx-auto px-6 text-center">
-          <h1 className="text-sm font-black text-primary uppercase tracking-[0.3em] mb-4">Connect With Us</h1>
-          <h2 className="text-5xl lg:text-7xl font-black text-slate-900 leading-tight">Get in <span className="text-primary">Touch.</span></h2>
-          <p className="text-slate-500 mt-8 max-w-2xl mx-auto font-medium text-lg leading-relaxed">
-            Have questions or need assistance? Our team at HealthCore Bangladesh is available 24/7 to help you with your medical inquiries.
+      <section className="bg-secondary-950 text-white py-14">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <p className="text-xs font-semibold uppercase tracking-widest text-primary-300">
+            Patient Support &amp; Inquiries
+          </p>
+          <h1 className="mt-2 text-3xl sm:text-4xl font-display font-extrabold text-white">
+            Contact {SITE.name}
+          </h1>
+          <p className="mt-2 text-base text-slate-300 max-w-2xl">
+            Reach our patient navigation team for scheduling help, medical records requests, billing inquiries, or clinic directions.
           </p>
         </div>
       </section>
 
-      <section className="py-24 bg-white">
-        <div className="container mx-auto px-6">
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-16">
-            
-            {/* Contact Info Sidebar */}
-            <div className="lg:col-span-1 space-y-10">
-               <div className="p-10 bg-primary/5 rounded-[3rem] border border-primary/10">
-                  <h3 className="text-xl font-black text-slate-900 mb-8">Contact Information</h3>
-                  
-                  <div className="space-y-8">
-                     <div className="flex items-start gap-4">
-                        <div className="w-10 h-10 bg-white shadow-sm rounded-xl flex items-center justify-center text-primary shrink-0">
-                           <MapPin className="w-5 h-5" />
-                        </div>
-                        <div>
-                           <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Location</p>
-                           <p className="text-sm font-bold text-slate-700 leading-relaxed">House 12, Road 5, Dhanmondi, Dhaka 1205, Bangladesh</p>
-                        </div>
-                     </div>
-                     <div className="flex items-start gap-4">
-                        <div className="w-10 h-10 bg-white shadow-sm rounded-xl flex items-center justify-center text-primary shrink-0">
-                           <Phone className="w-5 h-5" />
-                        </div>
-                        <div>
-                           <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Phone</p>
-                           <p className="text-sm font-bold text-slate-700">+880 1711-234567</p>
-                           <p className="text-xs text-slate-500">Emergency: 10666</p>
-                        </div>
-                     </div>
-                     <div className="flex items-start gap-4">
-                        <div className="w-10 h-10 bg-white shadow-sm rounded-xl flex items-center justify-center text-primary shrink-0">
-                           <Mail className="w-5 h-5" />
-                        </div>
-                        <div>
-                           <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Email</p>
-                           <p className="text-sm font-bold text-slate-700">info@healthcore.com.bd</p>
-                           <p className="text-xs text-slate-500">support@healthcore.com.bd</p>
-                        </div>
-                     </div>
-                     <div className="flex items-start gap-4">
-                        <div className="w-10 h-10 bg-white shadow-sm rounded-xl flex items-center justify-center text-primary shrink-0">
-                           <Clock className="w-5 h-5" />
-                        </div>
-                        <div>
-                           <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Hours</p>
-                           <p className="text-sm font-bold text-slate-700">24/7 Emergency Services</p>
-                           <p className="text-xs text-slate-500">OPD: 8:00 AM - 10:00 PM</p>
-                        </div>
-                     </div>
-                  </div>
-               </div>
+      <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12 grid grid-cols-1 lg:grid-cols-12 gap-8">
+        {/* Contact Details */}
+        <div className="lg:col-span-5 space-y-5">
+          <Card className="space-y-5">
+            <h2 className="text-lg font-display font-bold text-slate-900">Hospital Desk &amp; Hours</h2>
+            <div className="space-y-4 text-sm">
+              <div className="flex items-start gap-3">
+                <div className="w-9 h-9 rounded-lg bg-primary-50 text-primary-700 flex items-center justify-center shrink-0">
+                  <MapPin className="w-4 h-4" aria-hidden="true" />
+                </div>
+                <div>
+                  <p className="font-semibold text-slate-900">Main Medical Campus</p>
+                  <p className="text-slate-600">{SITE.address}</p>
+                </div>
+              </div>
 
-               {/* Social Icons */}
-               <div className="flex items-center gap-4 px-6">
-                  {[Facebook, Twitter, Instagram, Linkedin].map((Icon, i) => (
-                     <a key={i} href="#" className="w-12 h-12 rounded-2xl bg-slate-50 border border-slate-100 flex items-center justify-center text-slate-400 hover:bg-primary hover:text-white transition-all">
-                        <Icon className="w-5 h-5" />
-                     </a>
-                  ))}
-               </div>
-            </div>
+              <div className="flex items-start gap-3">
+                <div className="w-9 h-9 rounded-lg bg-rose-50 text-rose-700 flex items-center justify-center shrink-0">
+                  <Phone className="w-4 h-4" aria-hidden="true" />
+                </div>
+                <div>
+                  <p className="font-semibold text-slate-900">24/7 Emergency Triage</p>
+                  <a href={`tel:${SITE.emergencyTel}`} className="text-rose-700 font-semibold hover:underline">
+                    {SITE.emergencyPhone}
+                  </a>
+                  <p className="text-slate-600 mt-1">
+                    Appointments:{' '}
+                    <a href={`tel:${SITE.appointmentTel}`} className="text-primary-700 font-medium hover:underline">
+                      {SITE.appointmentPhone}
+                    </a>
+                  </p>
+                </div>
+              </div>
 
-            {/* Contact Form */}
-            <div className="lg:col-span-2">
-               <div className="bg-white rounded-[4rem] p-10 lg:p-16 shadow-card border border-slate-100">
-                  <h3 className="text-3xl font-black text-slate-900 mb-8 tracking-tight">Send a <span className="text-primary">Message.</span></h3>
-                  
-                  <form onSubmit={handleSubmit} className="space-y-8">
-                     <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                        <div>
-                           <label className="text-xs font-black uppercase tracking-[0.2em] text-slate-400 mb-3 block">Full Name</label>
-                           <input 
-                              type="text" 
-                              required
-                              className="w-full bg-slate-50 border border-slate-200 p-5 rounded-2xl font-bold text-sm focus:ring-4 focus:ring-primary/5 transition-all"
-                              placeholder="e.g. John Doe"
-                              value={formData.name}
-                              onChange={(e) => setFormData({...formData, name: e.target.value})}
-                           />
-                        </div>
-                        <div>
-                           <label className="text-xs font-black uppercase tracking-[0.2em] text-slate-400 mb-3 block">Email Address</label>
-                           <input 
-                              type="email" 
-                              required
-                              className="w-full bg-slate-50 border border-slate-200 p-5 rounded-2xl font-bold text-sm focus:ring-4 focus:ring-primary/5 transition-all"
-                              placeholder="e.g. john@example.com"
-                              value={formData.email}
-                              onChange={(e) => setFormData({...formData, email: e.target.value})}
-                           />
-                        </div>
-                     </div>
-                     <div>
-                        <label className="text-xs font-black uppercase tracking-[0.2em] text-slate-400 mb-3 block">Subject</label>
-                        <input 
-                           type="text" 
-                           required
-                           className="w-full bg-slate-50 border border-slate-200 p-5 rounded-2xl font-bold text-sm focus:ring-4 focus:ring-primary/5 transition-all"
-                           placeholder="How can we help?"
-                           value={formData.subject}
-                           onChange={(e) => setFormData({...formData, subject: e.target.value})}
-                        />
-                     </div>
-                     <div>
-                        <label className="text-xs font-black uppercase tracking-[0.2em] text-slate-400 mb-3 block">Message</label>
-                        <textarea 
-                           required
-                           className="w-full bg-slate-50 border border-slate-200 p-5 rounded-[2rem] font-medium text-sm focus:ring-4 focus:ring-primary/5 transition-all h-40 resize-none"
-                           placeholder="Type your message here..."
-                           value={formData.message}
-                           onChange={(e) => setFormData({...formData, message: e.target.value})}
-                        ></textarea>
-                     </div>
-                     <button className="flex items-center gap-3 px-10 py-5 bg-primary text-white font-black rounded-2xl shadow-xl shadow-primary/20 hover:bg-primary-dark hover:scale-105 active:scale-95 transition-all group">
-                        Send Message
-                        <Send className="w-5 h-5 group-hover:translate-x-1 group-hover:-translate-y-1 transition-transform" />
-                     </button>
-                  </form>
-               </div>
+              <div className="flex items-start gap-3">
+                <div className="w-9 h-9 rounded-lg bg-secondary-50 text-secondary-800 flex items-center justify-center shrink-0">
+                  <Mail className="w-4 h-4" aria-hidden="true" />
+                </div>
+                <div>
+                  <p className="font-semibold text-slate-900">Email Support</p>
+                  <a href={`mailto:${SITE.email}`} className="text-primary-700 hover:underline block">
+                    {SITE.email}
+                  </a>
+                  <a href={`mailto:${SITE.billingEmail}`} className="text-slate-600 hover:underline text-xs">
+                    Billing: {SITE.billingEmail}
+                  </a>
+                </div>
+              </div>
+
+              <div className="flex items-start gap-3">
+                <div className="w-9 h-9 rounded-lg bg-emerald-50 text-emerald-700 flex items-center justify-center shrink-0">
+                  <Clock className="w-4 h-4" aria-hidden="true" />
+                </div>
+                <div>
+                  <p className="font-semibold text-slate-900">Operating Hours</p>
+                  <p className="text-slate-600">{SITE.opdHours}</p>
+                  <p className="text-slate-600">{SITE.emergencyHours}</p>
+                </div>
+              </div>
             </div>
-          </div>
+          </Card>
+
+          {/* Real Interactive Campus Map */}
+          <Card padding="p-0" className="overflow-hidden">
+            <iframe
+              title="HealthCore Medical Center Campus Map"
+              src="https://www.openstreetmap.org/export/embed.html?bbox=-71.1120%2C42.3320%2C-71.0960%2C42.3420&layer=mapnik&marker=42.3370%2C-71.1040"
+              className="w-full h-60 border-0"
+              loading="lazy"
+            />
+          </Card>
         </div>
-      </section>
 
-      {/* Map (Placeholder) */}
-      <section className="py-24 bg-slate-50">
-         <div className="container mx-auto px-6">
-            <div className="aspect-[21/9] bg-slate-200 rounded-[4rem] relative overflow-hidden shadow-card group">
-               <div className="absolute inset-0 bg-gradient-to-br from-slate-200 to-slate-300 flex items-center justify-center">
-                  <div className="text-center group-hover:scale-110 transition-transform duration-700">
-                     <div className="w-16 h-16 bg-primary text-white rounded-full flex items-center justify-center mx-auto mb-4 shadow-xl">
-                        <MapPin className="w-8 h-8" />
-                     </div>
-                     <p className="font-black text-slate-500 uppercase tracking-widest text-xs">Map Loading...</p>
-                     <p className="text-slate-400 text-[10px] mt-2 italic">Integrated Google Maps Interface</p>
-                  </div>
-               </div>
+        {/* Contact Form */}
+        <Card className="lg:col-span-7">
+          <h2 className="text-lg font-display font-bold text-slate-900 mb-1">Send Us a Message</h2>
+          <p className="text-sm text-slate-600 mb-6">
+            For medical emergencies, please call {SITE.emergencyPhone} immediately instead of using this form.
+          </p>
+
+          {error && <ErrorAlert message={error} className="mb-5" />}
+
+          {submitted && (
+            <div
+              role="status"
+              className="mb-5 rounded-xl border border-emerald-200 bg-emerald-50 p-4 flex items-start gap-3 text-sm text-emerald-900"
+            >
+              <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" aria-hidden="true" />
+              <div>
+                <p className="font-semibold">Inquiry received</p>
+                <p className="text-emerald-800 mt-0.5">
+                  Thank you for contacting {SITE.name}. Our team has logged your request and will reply shortly.
+                </p>
+              </div>
             </div>
-         </div>
+          )}
+
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <Input
+                label="Full Name"
+                value={formData.name}
+                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                placeholder="Jane Doe"
+                required
+              />
+              <Input
+                label="Email Address"
+                type="email"
+                value={formData.email}
+                onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                placeholder="jane@example.com"
+                required
+              />
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <Input
+                label="Phone Number"
+                type="tel"
+                value={formData.phone}
+                onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                placeholder="+1 (555) 234-5678"
+              />
+              <Input
+                label="Subject"
+                value={formData.subject}
+                onChange={(e) => setFormData({ ...formData, subject: e.target.value })}
+                placeholder="Appointment, Billing, or Records"
+                required
+              />
+            </div>
+
+            <Textarea
+              label="Message"
+              rows={5}
+              value={formData.message}
+              onChange={(e) => setFormData({ ...formData, message: e.target.value })}
+              placeholder="How can our care team assist you?"
+              required
+            />
+
+            <Button type="submit" loading={loading} size="lg">
+              <Send className="w-4 h-4" aria-hidden="true" />
+              Submit Inquiry
+            </Button>
+          </form>
+        </Card>
       </section>
     </div>
   );

@@ -1,140 +1,140 @@
-import { 
-  Heart, 
-  Activity, 
-  Droplets, 
-  Users, 
-  Zap, 
-  Stethoscope,
-  ChevronRight,
-  ArrowRight
-} from 'lucide-react';
+import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
+import { doctorsApi } from '../../services/api';
+import { Button, Badge, LoadingSpinner, ErrorAlert } from '../../components/ui';
+import { DEPARTMENT_METADATA, formatCurrency } from '../../config/site';
+import { Stethoscope, ArrowRight, Calendar, CheckCircle2, Star } from 'lucide-react';
 
 export default function Departments() {
-  const departments = [
-    {
-      id: 'cardiology',
-      name: 'Cardiology',
-      description: 'Comprehensive heart care including diagnostic services, treatment of cardiovascular diseases, and preventive cardiology.',
-      icon: Heart,
-      color: 'bg-rose-50 text-rose-500',
-      services: ['Echocardiogram', 'Stress Testing', 'Angiography', 'Heart Rhythm Management']
-    },
-    {
-      id: 'neurology',
-      name: 'Neurology',
-      description: 'Expert treatment for disorders of the nervous system, including the brain, spinal cord, and peripheral nerves.',
-      icon: Zap,
-      color: 'bg-indigo-50 text-indigo-500',
-      services: ['EEG & EMG Sleep Studies', 'Stroke Care', 'Epilepsy Treatment', 'Dementia Care']
-    },
-    {
-      id: 'orthopedics',
-      name: 'Orthopedics',
-      description: 'Specialized surgical and non-surgical care for musculoskeletal injuries, bone fractures, and joint problems.',
-      icon: Activity,
-      color: 'bg-blue-50 text-blue-500',
-      services: ['Joint Replacement', 'Sports Medicine', 'Spine Surgery', 'Trauma Care']
-    },
-    {
-      id: 'pediactrics',
-      name: 'Pediatrics',
-      description: 'Dedicated medical care for infants, children, and adolescents, covering all physical and emotional needs.',
-      icon: Users,
-      color: 'bg-amber-50 text-amber-500',
-      services: ['Vaccinations', 'Newborn Care', 'Growth Monitoring', 'Pediatric Surgery']
-    },
-    {
-      id: 'dermatology',
-      name: 'Dermatology',
-      description: 'Advanced care for skin, hair, and nail conditions, including medical and cosmetic dermatological services.',
-      icon: Droplets,
-      color: 'bg-pink-50 text-pink-500',
-      services: ['Skin Cancer Screening', 'Acne Treatment', 'Laser Therapy', 'Clinical Dermatology']
-    },
-    {
-      id: 'general-medicine',
-      name: 'General Medicine',
-      description: 'Comprehensive primary care services for adults, focusing on disease prevention and overall wellness.',
-      icon: Stethoscope,
-      color: 'bg-primary-50 text-primary-500',
-      services: ['Regular Checkups', 'Chronic Disease Management', 'Diagnostic Screening', 'Vaccinations']
+  const [departments, setDepartments] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+
+  const loadDepartments = async () => {
+    try {
+      setLoading(true);
+      setError('');
+      const res = await doctorsApi.getDepartments();
+      setDepartments(res.departments || []);
+    } catch (err) {
+      setError(err.message || 'Failed to load clinical departments');
+    } finally {
+      setLoading(false);
     }
-  ];
+  };
+
+  useEffect(() => {
+    loadDepartments();
+  }, []);
 
   return (
     <div className="animate-fadeIn">
-      {/* Header */}
-      <section className="py-24 bg-primary rounded-[4rem] mx-6 mt-6 mb-20 text-center text-white relative overflow-hidden">
-        <div className="absolute inset-0 bg-primary-900/20"></div>
-        <div className="relative z-10 px-6">
-          <h1 className="text-sm font-black uppercase tracking-[0.4em] mb-4 opacity-80">Clinical Specialities</h1>
-          <h2 className="text-5xl lg:text-7xl font-black mb-6 tracking-tight">World-Class <span className="text-secondary-200">Departments</span></h2>
-          <p className="text-lg text-primary-50 max-w-2xl mx-auto font-medium opacity-80">
-            HealthCore Bangladesh offers specialized care across multiple disciplines, integrated with high-end diagnostic technology.
+      <section className="bg-secondary-950 text-white py-14 lg:py-16">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <p className="text-xs font-semibold uppercase tracking-widest text-primary-300">
+            Clinical Units
+          </p>
+          <h1 className="mt-2 text-3xl sm:text-4xl font-display font-extrabold text-white">
+            Centers of Medical Excellence
+          </h1>
+          <p className="mt-3 text-base text-slate-300 max-w-2xl">
+            Explore our specialty departments with live physician availability, transparent consultation fees, and direct appointment scheduling.
           </p>
         </div>
       </section>
 
-      {/* Department Grid */}
-      <section className="py-12 bg-white">
-        <div className="container mx-auto px-6">
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-12">
-            {departments.map((dept, idx) => (
-              <div key={idx} className="group flex flex-col bg-white rounded-[3rem] shadow-card border border-slate-100 hover:shadow-elevated hover:-translate-y-2 transition-all overflow-hidden">
-                <div className="p-10 flex-grow">
-                  <div className={`w-16 h-16 ${dept.color} rounded-2xl flex items-center justify-center mb-8 group-hover:scale-110 transition-transform`}>
-                    <dept.icon className="w-8 h-8" />
-                  </div>
-                  <h3 className="text-2xl font-black text-slate-900 mb-4">{dept.name}</h3>
-                  <p className="text-slate-500 text-sm leading-relaxed mb-8">
-                    {dept.description}
-                  </p>
-                  <div className="space-y-3">
-                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4">Core Services</p>
-                    {dept.services.map((service, sIdx) => (
-                      <div key={sIdx} className="flex items-center gap-3 text-sm font-bold text-slate-700">
-                        <div className="w-1.5 h-1.5 bg-primary rounded-full"></div>
-                        {service}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-                <div className="p-6 bg-slate-50 border-t border-slate-100 mt-auto">
-                  <Link 
-                    to={`/appointment?specialization=${dept.name.toUpperCase()}`}
-                    className="flex items-center justify-between w-full font-black text-xs uppercase tracking-widest text-primary hover:text-primary-dark transition-colors"
-                  >
-                    Meet a Specialist
-                    <ArrowRight className="w-5 h-5" />
-                  </Link>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
+      <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+        {error && <ErrorAlert message={error} onRetry={loadDepartments} className="mb-6" />}
 
-      {/* Info Section */}
-      <section className="py-24 bg-slate-50">
-        <div className="container mx-auto px-6">
-          <div className="bg-white rounded-[4rem] p-12 lg:p-20 shadow-card border border-slate-100 flex flex-col lg:flex-row items-center gap-16">
-            <div className="w-24 h-24 lg:w-32 lg:h-32 bg-primary-100 rounded-[2.5rem] flex items-center justify-center shrink-0">
-               <Stethoscope className="w-12 h-12 lg:w-16 lg:h-16 text-primary" />
-            </div>
-            <div className="text-center lg:text-left">
-               <h3 className="text-3xl font-black text-slate-900 mb-4">Diagnostic Precision & Care</h3>
-               <p className="text-slate-600 leading-relaxed font-medium">
-                 All our departments are supported by a unified diagnostic laboratory, ensuring that your test results are accurately integrated into your Electronic Health Record (EHR) instantly. 
-               </p>
-               <div className="mt-8 flex flex-col sm:flex-row items-center gap-6">
-                  <Link to="/doctors" className="font-black text-primary uppercase text-xs tracking-widest flex items-center gap-2 group">
-                    View All Doctors
-                    <ChevronRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
-                  </Link>
-               </div>
-            </div>
+        {loading ? (
+          <LoadingSpinner label="Loading clinical departments..." />
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {departments.map((dept) => {
+              const meta = DEPARTMENT_METADATA[dept.name] || {};
+              return (
+                <div
+                  key={dept.name}
+                  className="bg-white rounded-xl border border-slate-200 shadow-card hover:shadow-elevated hover:border-primary-200 transition-all p-6 flex flex-col justify-between gap-6"
+                >
+                  <div className="space-y-4">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="w-11 h-11 rounded-xl bg-primary-50 text-primary-700 flex items-center justify-center shrink-0">
+                        <Stethoscope className="w-5 h-5" aria-hidden="true" />
+                      </div>
+                      <div className="flex flex-wrap items-center justify-end gap-1.5">
+                        <Badge tone={dept.doctorCount > 0 ? 'primary' : 'neutral'}>
+                          {dept.doctorCount} {dept.doctorCount === 1 ? 'Doctor' : 'Doctors'}
+                        </Badge>
+                        {dept.avgRating > 0 && (
+                          <Badge tone="warning">
+                            <Star className="w-3 h-3 fill-amber-500 text-amber-500" aria-hidden="true" />
+                            {dept.avgRating.toFixed(1)}
+                          </Badge>
+                        )}
+                      </div>
+                    </div>
+
+                    <div>
+                      <h2 className="text-lg font-display font-bold text-slate-900">{dept.name}</h2>
+                      <p className="mt-1.5 text-sm text-slate-600 leading-relaxed">
+                        {meta.shortDesc || 'Comprehensive outpatient and diagnostic clinical care.'}
+                      </p>
+                    </div>
+
+                    {meta.services && (
+                      <ul className="space-y-1.5 pt-2 border-t border-slate-100">
+                        {meta.services.map((svc) => (
+                          <li key={svc} className="flex items-center gap-2 text-xs font-medium text-slate-700">
+                            <CheckCircle2 className="w-3.5 h-3.5 text-primary-700 shrink-0" aria-hidden="true" />
+                            {svc}
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+
+                    {dept.minFee !== null && (
+                      <p className="text-xs text-slate-600 tabular-nums">
+                        Consultation fees from{' '}
+                        <span className="font-semibold text-slate-900">{formatCurrency(dept.minFee)}</span>
+                      </p>
+                    )}
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2.5 pt-3 border-t border-slate-100">
+                    <Link to={`/doctors?department=${encodeURIComponent(dept.name)}`}>
+                      <Button variant="outline" size="sm" className="w-full">
+                        View Doctors
+                      </Button>
+                    </Link>
+                    <Link to={`/appointment?department=${encodeURIComponent(dept.name)}`}>
+                      <Button variant="primary" size="sm" className="w-full">
+                        <Calendar className="w-3.5 h-3.5" aria-hidden="true" />
+                        Book Visit
+                      </Button>
+                    </Link>
+                  </div>
+                </div>
+              );
+            })}
           </div>
+        )}
+
+        <div className="mt-12 rounded-xl bg-primary-50 border border-primary-100 p-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div>
+            <h2 className="text-base font-display font-bold text-slate-900">
+              Not sure which department to visit?
+            </h2>
+            <p className="text-sm text-slate-600 mt-0.5">
+              Start with General Medicine / Internal Medicine for a comprehensive assessment and referral.
+            </p>
+          </div>
+          <Link to={`/appointment?department=${encodeURIComponent('General Medicine / Internal Medicine')}`}>
+            <Button variant="primary">
+              Book General Consultation
+              <ArrowRight className="w-4 h-4" aria-hidden="true" />
+            </Button>
+          </Link>
         </div>
       </section>
     </div>
