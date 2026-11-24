@@ -1,22 +1,33 @@
 {
   "name": "healthcare-hms-server",
-  "version": "1.0.0",
-  "description": "Healthcare Management System Backend API",
+  "version": "2.0.0",
+  "description": "HealthCore Medical Center Backend API",
   "main": "src/server.js",
   "type": "module",
+  "engines": {
+    "node": ">=20.0.0"
+  },
   "scripts": {
     "start": "node src/server.js",
-    "dev": "node --watch src/server.js"
+    "dev": "node --watch-path=src src/server.js",
+    "seed": "node src/seed.js",
+    "test": "node --test test/*.test.js"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",
+    "compression": "^1.7.5",
     "cors": "^2.8.5",
     "dotenv": "^17.4.2",
     "express": "^4.18.2",
     "express-rate-limit": "^7.1.5",
+    "helmet": "^8.1.0",
     "jsonwebtoken": "^9.0.2",
     "mongoose": "^9.4.1",
+    "morgan": "^1.10.0",
     "nodemailer": "^8.0.5",
-    "uuid": "^9.0.1"
+    "zod": "^3.24.2"
+  },
+  "devDependencies": {
+    "supertest": "^7.0.0"
   }
 }
