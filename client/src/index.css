@@ -2,85 +2,106 @@
 @tailwind components;
 @tailwind utilities;
 
-* {
-  margin: 0;
-  padding: 0;
-  box-sizing: border-box;
+@layer base {
+  html {
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    scroll-behavior: smooth;
+  }
+
+  h1, h2, h3, h4, .font-display {
+    font-family: 'Plus Jakarta Sans', 'Inter', system-ui, sans-serif;
+  }
+
+  body {
+    background-color: #F8FAFC;
+    color: #0F172A;
+  }
+
+  /* Accessible focus ring that preserves High Contrast / forced-colors outline */
+  :focus-visible {
+    outline: 2px solid #0F766E;
+    outline-offset: 2px;
+  }
 }
 
-body {
-  font-family: 'Inter', system-ui, sans-serif;
-  background-color: #F8FAFC;
-  color: #0F172A;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
+@layer utilities {
+  .tabular-nums {
+    font-variant-numeric: tabular-nums;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar-track {
+    background: #F1F5F9;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar-thumb {
+    background: #CBD5E1;
+    border-radius: 9999px;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar-thumb:hover {
+    background: #94A3B8;
+  }
+
+  .animate-fadeIn {
+    animation: fadeIn 0.2s ease-out both;
+  }
 }
 
-/* Custom scrollbar */
-::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
-}
-
-::-webkit-scrollbar-track {
-  background: #F1F5F9;
-}
-
-::-webkit-scrollbar-thumb {
-  background: #CBD5E1;
-  border-radius: 4px;
-}
-
-::-webkit-scrollbar-thumb:hover {
-  background: #94A3B8;
-}
-
-/* Animation utilities */
 @keyframes fadeIn {
-  from { opacity: 0; transform: translateY(-10px); }
-  to { opacity: 1; transform: translateY(0); }
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
-@keyframes slideIn {
-  from { opacity: 0; transform: translateX(-20px); }
-  to { opacity: 1; transform: translateX(0); }
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }
 
-@keyframes pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.5; }
-}
+/* Medical-Grade A4 Print Stylesheet for Invoices, Prescriptions & EHR Reports */
+@media print {
+  @page {
+    size: A4 portrait;
+    margin: 14mm;
+  }
 
-.animate-fadeIn {
-  animation: fadeIn 0.3s ease-out;
-}
+  body {
+    background: #FFFFFF !important;
+    color: #0F172A !important;
+    font-size: 11pt;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
 
-.animate-slideIn {
-  animation: slideIn 0.3s ease-out;
-}
+  .no-print {
+    display: none !important;
+  }
 
-.animate-pulse {
-  animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
-}
+  .print-sheet {
+    box-shadow: none !important;
+    border: 1px solid #CBD5E1 !important;
+    border-radius: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    max-width: 100% !important;
+  }
 
-/* Form styles */
-input:focus, select:focus, textarea:focus {
-  outline: none;
-  border-color: #0D9488;
-  box-shadow: 0 0 0 2px rgba(13, 148, 136, 0.2);
-}
-
-/* Button transitions */
-button {
-  transition: all 0.2s ease-in-out;
-}
-
-/* Table row hover */
-tbody tr:hover {
-  background-color: #F0F9FF;
-}
-
-/* Modal overlay */
-.modal-overlay {
-  backdrop-filter: blur(4px);
+  tr, .print-avoid-break {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
 }

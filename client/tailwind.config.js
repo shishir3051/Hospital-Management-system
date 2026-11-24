@@ -1,16 +1,13 @@
 /** @type {import('tailwindcss').Config} */
 export default {
   content: [
-    "./index.html",
-    "./src/**/*.{js,ts,jsx,tsx}",
+    './index.html',
+    './src/**/*.{js,ts,jsx,tsx}'
   ],
   theme: {
     extend: {
       colors: {
         primary: {
-          DEFAULT: '#0D9488',
-          dark: '#0F766E',
-          light: '#14B8A6',
           50: '#F0FDFA',
           100: '#CCFBF1',
           200: '#99F6E4',
@@ -21,26 +18,39 @@ export default {
           700: '#0F766E',
           800: '#115E59',
           900: '#134E4A',
+          950: '#042F2E',
+          DEFAULT: '#0F766E',
+          dark: '#115E59',
+          light: '#14B8A6'
         },
         secondary: {
-          DEFAULT: '#1E40AF',
+          50: '#EFF6FF',
+          100: '#DBEAFE',
+          200: '#BFDBFE',
+          300: '#93C5FD',
+          400: '#60A5FA',
+          500: '#3B82F6',
+          600: '#2563EB',
+          700: '#1D4ED8',
+          800: '#1E40AF',
+          900: '#1E3A8A',
+          950: '#172554',
+          DEFAULT: '#1E3A8A',
           light: '#3B82F6',
-          dark: '#1E3A8A',
-        },
-        accent: '#F59E0B',
-        surface: '#FFFFFF',
-        background: '#F8FAFC',
+          dark: '#172554'
+        }
       },
       fontFamily: {
-        sans: ['Inter', 'system-ui', 'sans-serif'],
-        mono: ['JetBrains Mono', 'monospace'],
+        display: ['Plus Jakarta Sans', 'Inter', 'system-ui', 'sans-serif'],
+        sans: ['Inter', 'system-ui', '-apple-system', 'sans-serif'],
+        mono: ['JetBrains Mono', 'ui-monospace', 'SFMono-Regular', 'monospace']
       },
       boxShadow: {
-        'card': '0 1px 3px rgba(0,0,0,0.1), 0 1px 2px rgba(0,0,0,0.06)',
-        'elevated': '0 10px 15px -3px rgba(0,0,0,0.1)',
-        'modal': '0 25px 50px -12px rgba(0,0,0,0.25)',
-      },
-    },
+        card: '0 1px 2px rgba(15, 23, 42, 0.05), 0 1px 3px rgba(15, 23, 42, 0.06)',
+        elevated: '0 10px 24px -6px rgba(15, 23, 42, 0.08), 0 4px 10px -4px rgba(15, 23, 42, 0.04)',
+        modal: '0 24px 48px -12px rgba(15, 23, 42, 0.22)'
+      }
+    }
   },
-  plugins: [],
-}
+  plugins: []
+};
